@@ -205,7 +205,8 @@ rc_clone_prod() {
   local dest="${1:-$RUNTIME_DIR/prod-clone}"
   require_cmd rsync
   local ts
-  ts=$(ssh_cmd "docker inspect rp-prod --format '{{ index .HostConfig.Binds 0 }}'" | xargs dirname | awk -F'/' '{print $NF}')
+  ts=$(ssh_cmd "docker inspect rp-prod --format '{{ index .HostConfig.Binds 0 }}'" \
+        | xargs dirname | awk -F'/' '{print $NF}')
   [[ -n "$ts" ]] || die "Unable to determine prod runtime directory"
   local src="$PROD_ROOT/$ts"
   log_info "Cloning prod runtime from $src to $dest"
