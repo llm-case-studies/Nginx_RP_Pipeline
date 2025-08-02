@@ -1,15 +1,15 @@
 #!/usr/bin/env bats
 
-@test "log prints emoji and message" {
-  run bash -c 'source scripts/lib/core.sh; log "ℹ️" "hello"'
+@test "log_info prints icon and message" {
+  run bash -c 'source scripts/lib/core.sh; log_info "hello"'
   [ "$status" -eq 0 ]
-  [ "$output" = "ℹ️ hello" ]
+  [ "$output" = "ℹ️  hello" ]
 }
 
 @test "die exits with message" {
   run bash -c 'source scripts/lib/core.sh; die "fail"'
   [ "$status" -eq 1 ]
-  [ "$output" = "❌ fail" ]
+  [ "$output" = "✖ fail" ]
 }
 
 @test "require_cmd fails on missing command" {
@@ -18,7 +18,7 @@
 }
 
 @test "json_get extracts value" {
-  run bash -c 'source scripts/lib/core.sh; echo "{\"a\":1}" | json_get .a'
+  run bash -c 'source scripts/lib/core.sh; json_get "{\"a\":1}" .a'
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
 }

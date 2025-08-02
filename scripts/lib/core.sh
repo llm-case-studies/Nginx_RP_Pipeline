@@ -1,51 +1,52 @@
 #!/usr/bin/env bash
+#-------------------------------------------------------------
+# core.sh  –  generic helpers used by every safe‑rp‑ctl module
+#-------------------------------------------------------------
+# This file is source‑only (never executed directly).  Keep it
+# dependency‑free so it can run on the minimal POSIX shell
+# available on stage/pre‑prod/prod hosts.
+#-------------------------------------------------------------
 set -euo pipefail
 IFS=$'\n\t'
 
-# Colour output helpers
-_colour() {
-  local code=$1
-  shift
-  printf '\033[%sm%s\033[0m' "$code" "$*"
+# Detect TTY for colours ------------------------------------------------
+if [[ -t 2 ]]; then
+  _col_reset="$(tput sgr0)"  || true
+  _col_red="$(tput setaf 1)"  || true
+  _col_yel="$(tput setaf 3)"  || true
+  _col_grn="$(tput setaf 2)"  || true
+else
+  _col_reset=""; _col_red=""; _col_yel=""; _col_grn="";
+fi
+
+# Logging helpers -------------------------------------------------------
+_log() {
+  local icon=$1; shift
+  printf '%b%s%b %s\n' "${_col_grn}" "${icon}" "${_col_reset}" "$*"
 }
 
-colour_red() { _colour 31 "$@"; }
-colour_green() { _colour 32 "$@"; }
-colour_yellow() { _colour 33 "$@"; }
+log_info()    { _log "ℹ️ " "$*"; }
+log_success() { _log "✅" "$*"; }
+log_warn()    { printf '%b⚠️  %s%b\n'  "${_col_yel}" "$*" "${_col_reset}"; }
+log_error()   { printf '%b✖ %s%b\n' "${_col_red}" "$*" "${_col_reset}"; }
 
-# Logging
-log() {
-  local emoji=$1
-  shift
-  printf '%b %s\n' "$emoji" "$*"
-}
-
-# Error handler
-_die() {
-  log "❌" "$*" >&2
+die() {
+  log_error "$*" >&2
   exit 1
 }
 
-die() {
-  _die "$@"
-}
-
-# Ensure required commands exist
+# Cmd dependency check --------------------------------------------------
 require_cmd() {
-  local missing=0
-  for cmd in "$@"; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      log "⚠️" "Missing required command: $cmd"
-      missing=1
-    fi
-  done
-  [[ $missing -eq 0 ]] || _die "Required command not found"
+  local cmd=$1
+  command -v "$cmd" >/dev/null 2>&1 || die "Required command '$cmd' not found in PATH"
 }
 
-# JSON helper using jq
+# Small JSON getter using jq -------------------------------------------
+#   json_get '{"foo": {"bar": 42}}' .foo.bar    -> 42
 json_get() {
-  require_cmd jq
-  local json=$1
-  local filter=$2
-  echo "$json" | jq -r "$filter"
+  local json=$1; local jq_expr=$2
+  echo "$json" | jq -r "$jq_expr"
 }
+
+# Timestamp helper (UTC, sortable) -------------------------------------
+now_ts() { date -u '+%Y%m%d-%H%M%S'; }
