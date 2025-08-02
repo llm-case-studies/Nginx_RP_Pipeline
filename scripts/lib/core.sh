@@ -21,14 +21,21 @@ fi
 
 # Logging helpers -------------------------------------------------------
 _log() {
-  local icon=$1; shift
-  printf '%b%s%b %s\n' "${_col_grn}" "${icon}" "${_col_reset}" "$*"
+  local icon="$1"; shift
+  printf '%b%s%b %s\n' "${_col_grn}" "${icon}" "${_col_reset}" "$*" || true
+  return 0
 }
 
 log_info()    { _log "ℹ️ " "$*"; }
 log_success() { _log "✅" "$*"; }
-log_warn()    { printf '%b⚠️  %s%b\n'  "${_col_yel}" "$*" "${_col_reset}"; }
-log_error()   { printf '%b✖ %s%b\n' "${_col_red}" "$*" "${_col_reset}"; }
+log_warn() {
+  printf '%b⚠️  %s%b\n'  "${_col_yel}" "$*" "${_col_reset}" || true
+  return 0
+}
+log_error() {
+  printf '%b✖ %s%b\n' "${_col_red}" "$*" "${_col_reset}" || true
+  return 0
+}
 
 die() {
   log_error "$*" >&2
