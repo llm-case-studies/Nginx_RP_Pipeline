@@ -14,12 +14,22 @@ source "$SCRIPT_DIR/lib/docker_ops.sh"
 source "$SCRIPT_DIR/lib/release_ops.sh"
 
 cmd="${1:-}"
+shift || true
 case "$cmd" in
   build-local)
     rc_build_local
     ;;
+  start)
+    rc_start "$@"
+    ;;
+  deploy-prod)
+    rc_deploy_prod
+    ;;
+  rollback)
+    rc_rollback "$@"
+    ;;
   *)
-    log "❌" "Unknown command: $cmd"
+    log_error "Unknown command: $cmd"
     exit 1
     ;;
 esac
