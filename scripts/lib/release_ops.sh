@@ -25,6 +25,7 @@ RUNTIME_DIR="$WORKSPACE_ROOT/runtime"
 PORT_TPL_DIR="$WORKSPACE_ROOT/ports"
 # shellcheck disable=SC2034
 PROD_SSH="${PROD_SSH:-proxyuser@prod}"
+PROD_ROOT="${PROD_ROOT:-/home/proxyuser/NgNix-RP}"
 
 # These envs can be overridden by caller
 IMAGE="${IMAGE:-nginx:latest}"
@@ -39,7 +40,7 @@ rc_build_local() {
   gen_dev_certs
 
   [[ -d "$RUNTIME_DIR" ]] && rm -rf "$RUNTIME_DIR"
-  mkdir -p "$RUNTIME_DIR/conf.d" "$RUNTIME_DIR/www" "$RUNTIME_DIR/logs"
+  mkdir -p "$RUNTIME_DIR/conf.d" "$RUNTIME_DIR/www" "$RUNTIME_DIR/logs" "$RUNTIME_DIR/info_pages"
 
   mapfile -t zips < <(find "$INTAKE_DIR" -maxdepth 1 -type f -name '*.zip')
   (( ${#zips[@]} > 0 )) || die "No artefacts in $INTAKE_DIR"
@@ -87,7 +88,8 @@ rc_build_local() {
                 -v $RUNTIME_DIR/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $RUNTIME_DIR/www:/var/www:ro                      \
                 -v $WORKSPACE_ROOT/certs:/etc/nginx/certs:ro         \
-                -v $RUNTIME_DIR/logs:/var/log/nginx"
+                -v $RUNTIME_DIR/logs:/var/www/NgNix-RP/nginx-logs    \
+                -v $RUNTIME_DIR/info_pages:/var/www/info_pages:ro"
   EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost:${HTTPS_PORT}/" 5 1
@@ -114,7 +116,8 @@ rc_start() {
                 -v $RUNTIME_DIR/conf.d:/etc/nginx/conf.d:ro          \
                 -v $RUNTIME_DIR/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $RUNTIME_DIR/www:/var/www:ro                      \
-                -v $RUNTIME_DIR/logs:/var/log/nginx"
+                -v $RUNTIME_DIR/logs:/var/www/NgNix-RP/nginx-logs    \
+                -v $RUNTIME_DIR/info_pages:/var/www/info_pages:ro"
   EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost:443/" 5 2
@@ -124,11 +127,10 @@ rc_start() {
 # 3. rc_deploy_prod – promote to prod with timestamp dir
 ############################################################################
 rc_deploy_prod() {
-  local prod_root="/home/proxyuser"       # adjust to real prod path
   require_cmd jq
   local release_id
   release_id=$(jq -r '.id' "$RUNTIME_DIR/release.json")
-  local new_dir="$prod_root/Nginx-$release_id"
+  local new_dir="$PROD_ROOT/Nginx-$release_id"
 
   log_info "🚀 Promoting runtime to $new_dir"
   cp -r "$RUNTIME_DIR" "$new_dir"
@@ -139,7 +141,8 @@ rc_deploy_prod() {
                 -v $new_dir/conf.d:/etc/nginx/conf.d:ro          \
                 -v $new_dir/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $new_dir/www:/var/www:ro                      \
-                -v $new_dir/logs:/var/log/nginx"
+                -v $new_dir/logs:/var/www/NgNix-RP/nginx-logs    \
+                -v $new_dir/info_pages:/var/www/info_pages:ro"
   EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost/" 10 3
@@ -163,7 +166,8 @@ rc_rollback() {
                 -v $dir/conf.d:/etc/nginx/conf.d:ro          \
                 -v $dir/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $dir/www:/var/www:ro                      \
-                -v $dir/logs:/var/log/nginx"
+                -v $dir/logs:/var/www/NgNix-RP/nginx-logs    \
+                -v $dir/info_pages:/var/www/info_pages:ro"
   EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost/" 10 3
@@ -174,9 +178,8 @@ rc_rollback() {
 # 5. rc_list_releases – list prod releases with manifest note
 ############################################################################
 rc_list_releases() {
-  local prod_root="/home/proxyuser"
   require_cmd jq
-  mapfile -t dirs < <(find "$prod_root" -maxdepth 1 -type d -name 'Nginx-prod-*' | sort)
+  mapfile -t dirs < <(find "$PROD_ROOT" -maxdepth 1 -type d -name 'Nginx-prod-*' | sort)
   for dir in "${dirs[@]}"; do
     local id="${dir##*/Nginx-}"
     local note=""
@@ -193,5 +196,21 @@ rc_describe_release() {
   [[ -n "$dir" ]] || die "Usage: rc_describe_release <dir>"
   [[ -f "$dir/release.json" ]] || die "release.json not found in $dir"
   manifest_pretty "$dir/release.json"
+}
+
+############################################################################
+# 7. rc_clone_prod [dest] – copy current prod runtime
+############################################################################
+rc_clone_prod() {
+  local dest="${1:-$RUNTIME_DIR/prod-clone}"
+  require_cmd rsync
+  local ts
+  ts=$(ssh_cmd "docker inspect rp-prod --format '{{ index .HostConfig.Binds 0 }}'" | xargs dirname | awk -F'/' '{print $NF}')
+  [[ -n "$ts" ]] || die "Unable to determine prod runtime directory"
+  local src="$PROD_ROOT/$ts"
+  log_info "Cloning prod runtime from $src to $dest"
+  mkdir -p "$dest"
+  rsync -az "$PROD_SSH:$src/" "$dest/"
+  log_success "Prod runtime cloned to $dest"
 }
 
