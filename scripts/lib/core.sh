@@ -10,11 +10,11 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Detect TTY for colours ------------------------------------------------
-if [[ -t 2 ]]; then
-  _col_reset="$(tput sgr0)"  || true
-  _col_red="$(tput setaf 1)"  || true
-  _col_yel="$(tput setaf 3)"  || true
-  _col_grn="$(tput setaf 2)"  || true
+if [[ -t 2 ]] && command -v tput >/dev/null 2>&1; then
+  _col_reset="$(tput sgr0 2>/dev/null || true)"
+  _col_red="$(tput setaf 1 2>/dev/null || true)"
+  _col_yel="$(tput setaf 3 2>/dev/null || true)"
+  _col_grn="$(tput setaf 2 2>/dev/null || true)"
 else
   _col_reset=""; _col_red=""; _col_yel=""; _col_grn="";
 fi
