@@ -38,14 +38,14 @@ case "$cmd" in
   rollback)
     rc_rollback "$@"
     ;;
+  clone-prod)
+    rc_clone_prod "$@"
+    ;;
   list-releases)
     rc_list_releases
     ;;
   describe-release)
     rc_describe_release "$@"
-    ;;
-  clone-prod)
-    rc_clone_prod "$@"
     ;;
   *)
     log_error "Unknown command: $cmd"
