@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+export ROOT_DIR
+
+# shellcheck source=lib/core.sh
+source "$SCRIPT_DIR/lib/core.sh"
+# shellcheck source=lib/docker_ops.sh
+source "$SCRIPT_DIR/lib/docker_ops.sh"
+# shellcheck source=lib/release_ops.sh
+source "$SCRIPT_DIR/lib/release_ops.sh"
+
+cmd="${1:-}"
+case "$cmd" in
+  build-local)
+    rc_build_local
+    ;;
+  *)
+    log "❌" "Unknown command: $cmd"
+    exit 1
+    ;;
+esac
