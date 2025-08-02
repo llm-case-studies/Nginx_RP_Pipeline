@@ -57,3 +57,17 @@ json_get() {
 
 # Timestamp helper (UTC, sortable) -------------------------------------
 now_ts() { date -u '+%Y%m%d-%H%M%S'; }
+
+gen_dev_certs() {
+  require_cmd mkcert openssl
+  local cert_dir="$WORKSPACE_ROOT/certs"
+  mkdir -p "$cert_dir"
+  local marker="$cert_dir/.mkcert_installed"
+  if [[ ! -f "$marker" ]]; then
+    mkcert -install
+    touch "$marker"
+  fi
+  if [[ ! -f "$cert_dir/cert.pem" || ! -f "$cert_dir/key.pem" ]]; then
+    mkcert -cert-file "$cert_dir/cert.pem" -key-file "$cert_dir/key.pem" localhost 127.0.0.1 ::1
+  fi
+}
