@@ -1,0 +1,4 @@
+tool_auth_config:
+  vertex_ai:
+    project_id: ""
+    service_account_json_path: ""

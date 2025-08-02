@@ -1,0 +1,17 @@
+# Local development certificates - NEVER commit these.
+/certs/*.pem
+
+# Ephemeral directories
+/intake/
+/archive/
+
+# Local environment files
+.env
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Log files
+*.log
