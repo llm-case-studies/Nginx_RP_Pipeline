@@ -32,6 +32,7 @@ NETWORK_NAME="rp-net"
 rc_build_local() {
   log_info "🛠  Building local release‑candidate from artefacts in $INTAKE_DIR"
   require_cmd unzip
+  gen_dev_certs
 
   [[ -d "$RUNTIME_DIR" ]] && rm -rf "$RUNTIME_DIR"
   mkdir -p "$RUNTIME_DIR/conf.d" "$RUNTIME_DIR/www" "$RUNTIME_DIR/logs"
@@ -45,7 +46,10 @@ rc_build_local() {
     tmpdir=$(mktemp -d)
     unzip -q "$zip" -d "$tmpdir"
     # Expect structure: app.conf , dist/  (adjust as needed)
-    mv "$tmpdir"/*.conf              "$RUNTIME_DIR/conf.d/" || true
+    if [[ -f "$tmpdir/nginx.conf" ]]; then
+      mv "$tmpdir/nginx.conf" "$RUNTIME_DIR/nginx.conf"
+    fi
+    mv "$tmpdir"/*.conf              "$RUNTIME_DIR/conf.d/" 2>/dev/null || true
     if [[ -d "$tmpdir"/dist ]]; then
       appname="$(basename "$zip" .zip)"
       mkdir -p "$RUNTIME_DIR/www/$appname"
@@ -56,6 +60,7 @@ rc_build_local() {
 
   cp "$PORT_TPL_DIR/local.conf" "$RUNTIME_DIR/ports.conf"
   cp "$WORKSPACE_ROOT/conf.d"/*.conf "$RUNTIME_DIR/conf.d/" 2>/dev/null || true
+  [[ -f "$RUNTIME_DIR/nginx.conf" ]] || cp "$WORKSPACE_ROOT/conf/nginx.conf" "$RUNTIME_DIR/nginx.conf"
 
   log_success "Runtime candidate built at $RUNTIME_DIR"
 
@@ -66,6 +71,7 @@ rc_build_local() {
                 -v $RUNTIME_DIR/conf.d:/etc/nginx/conf.d:ro          \
                 -v $RUNTIME_DIR/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $RUNTIME_DIR/www:/var/www:ro                      \
+                -v $WORKSPACE_ROOT/certs:/etc/nginx/certs:ro         \
                 -v $RUNTIME_DIR/logs:/var/log/nginx"
   dk_run
   probe_http "https://localhost:${HTTPS_PORT}/" 5 1
