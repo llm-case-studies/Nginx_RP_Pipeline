@@ -6,6 +6,11 @@
   [ "$output" = "ℹ️  hello" ]
 }
 
+@test "_log ignores broken pipe and returns 0" {
+  run bash -c 'source scripts/lib/core.sh; _log "ℹ️ " "hello" | head -n0'
+  [ "$status" -eq 0 ]
+}
+
 @test "die exits with message" {
   run bash -c 'source scripts/lib/core.sh; die "fail"'
   [ "$status" -eq 1 ]
