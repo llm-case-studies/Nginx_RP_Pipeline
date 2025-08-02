@@ -15,12 +15,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/core.sh"
 # shellcheck source=docker_ops.sh
 source "$SCRIPT_DIR/docker_ops.sh"
+# shellcheck source=manifest_ops.sh
+source "$SCRIPT_DIR/manifest_ops.sh"
 
 ### CONFIG ----------------------------------------------------------------
 WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 INTAKE_DIR="/mnt/pipeline-intake"         # absolute, shared by app teams
 RUNTIME_DIR="$WORKSPACE_ROOT/runtime"
 PORT_TPL_DIR="$WORKSPACE_ROOT/ports"
+# shellcheck disable=SC2034
+PROD_SSH="${PROD_SSH:-proxyuser@prod}"
 
 # These envs can be overridden by caller
 IMAGE="${IMAGE:-nginx:latest}"
@@ -30,31 +34,40 @@ NETWORK_NAME="rp-net"
 # 1. rc_build_local – build candidate & run local container
 ############################################################################
 rc_build_local() {
-  log_info "🛠  Building local release‑candidate from artefacts in $INTAKE_DIR"
-  require_cmd unzip
+  log_info "🛠  Building local candidate from $INTAKE_DIR"
+  require_cmd unzip sha256sum jq
   gen_dev_certs
 
   [[ -d "$RUNTIME_DIR" ]] && rm -rf "$RUNTIME_DIR"
   mkdir -p "$RUNTIME_DIR/conf.d" "$RUNTIME_DIR/www" "$RUNTIME_DIR/logs"
 
-  # Iterate over each .zip in intake
   mapfile -t zips < <(find "$INTAKE_DIR" -maxdepth 1 -type f -name '*.zip')
-  if (( ${#zips[@]} == 0 )); then die "No artefacts found in $INTAKE_DIR"; fi
+  (( ${#zips[@]} > 0 )) || die "No artefacts in $INTAKE_DIR"
 
+  apps_json="[]"
   for zip in "${zips[@]}"; do
-    log_info "↳ Processing $(basename "$zip")"
+    log_info "↳ Unpacking $(basename "$zip")"
+    sha="$(sha256sum "$zip" | cut -d' ' -f1)"
     tmpdir=$(mktemp -d)
     unzip -q "$zip" -d "$tmpdir"
-    # Expect structure: app.conf , dist/  (adjust as needed)
     if [[ -f "$tmpdir/nginx.conf" ]]; then
       mv "$tmpdir/nginx.conf" "$RUNTIME_DIR/nginx.conf"
     fi
-    mv "$tmpdir"/*.conf              "$RUNTIME_DIR/conf.d/" 2>/dev/null || true
-    if [[ -d "$tmpdir"/dist ]]; then
-      appname="$(basename "$zip" .zip)"
+    mv "$tmpdir"/*.conf "$RUNTIME_DIR/conf.d/" 2>/dev/null || true
+    appname="$(basename "$zip" .zip)"
+    if [[ -d "$tmpdir/dist" ]]; then
       mkdir -p "$RUNTIME_DIR/www/$appname"
-      mv "$tmpdir"/dist/* "$RUNTIME_DIR/www/$appname/" || true
+      mv "$tmpdir/dist"/* "$RUNTIME_DIR/www/$appname/" || true
     fi
+    commit=""
+    if [[ -f "$tmpdir/VERSION.txt" ]]; then
+      commit="$(head -n1 "$tmpdir/VERSION.txt")"
+    fi
+    apps_json=$(jq -c --arg name "$appname" \
+                      --arg zip "$(basename "$zip")" \
+                      --arg sha "$sha" \
+                      --arg commit "$commit" \
+                      '. + [{name:$name,zip:$zip,sha256:$sha,commit:$commit}]' <<< "$apps_json")
     rm -rf "$tmpdir"
   done
 
@@ -62,9 +75,11 @@ rc_build_local() {
   cp "$WORKSPACE_ROOT/conf.d"/*.conf "$RUNTIME_DIR/conf.d/" 2>/dev/null || true
   [[ -f "$RUNTIME_DIR/nginx.conf" ]] || cp "$WORKSPACE_ROOT/conf/nginx.conf" "$RUNTIME_DIR/nginx.conf"
 
+  local release_id="prod-$(now_ts)"
+  manifest_write "$release_id" "${RELEASE_NOTE:-}" "$apps_json"
+
   log_success "Runtime candidate built at $RUNTIME_DIR"
 
-  # start local container --------------------------------------------------
   CONTAINER_NAME="rp-local"
   HTTP_PORT=8080 HTTPS_PORT=8443
   VOLUME_FLAGS="-v $RUNTIME_DIR/nginx.conf:/etc/nginx/nginx.conf:ro \
@@ -73,6 +88,7 @@ rc_build_local() {
                 -v $RUNTIME_DIR/www:/var/www:ro                      \
                 -v $WORKSPACE_ROOT/certs:/etc/nginx/certs:ro         \
                 -v $RUNTIME_DIR/logs:/var/log/nginx"
+  EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost:${HTTPS_PORT}/" 5 1
 }
@@ -91,12 +107,15 @@ rc_start() {
     *) die "Unknown env $env";;
   esac
 
-  HTTP_PORT=80  HTTPS_PORT=443   # host ports on servers
+  require_cmd jq
+  release_id=$(jq -r '.id' "$RUNTIME_DIR/release.json")
+  HTTP_PORT=80  HTTPS_PORT=443
   VOLUME_FLAGS="-v $RUNTIME_DIR/nginx.conf:/etc/nginx/nginx.conf:ro \
                 -v $RUNTIME_DIR/conf.d:/etc/nginx/conf.d:ro          \
                 -v $RUNTIME_DIR/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $RUNTIME_DIR/www:/var/www:ro                      \
                 -v $RUNTIME_DIR/logs:/var/log/nginx"
+  EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost:443/" 5 2
 }
@@ -106,13 +125,14 @@ rc_start() {
 ############################################################################
 rc_deploy_prod() {
   local prod_root="/home/proxyuser"       # adjust to real prod path
-  local ts="prod-$(now_ts)"
-  local new_dir="$prod_root/Nginx-$ts"
+  require_cmd jq
+  local release_id
+  release_id=$(jq -r '.id' "$RUNTIME_DIR/release.json")
+  local new_dir="$prod_root/Nginx-$release_id"
 
   log_info "🚀 Promoting runtime to $new_dir"
   cp -r "$RUNTIME_DIR" "$new_dir"
 
-  # Swap container
   CONTAINER_NAME="rp-prod"
   HTTP_PORT=80 HTTPS_PORT=443
   VOLUME_FLAGS="-v $new_dir/nginx.conf:/etc/nginx/nginx.conf:ro \
@@ -120,6 +140,7 @@ rc_deploy_prod() {
                 -v $new_dir/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $new_dir/www:/var/www:ro                      \
                 -v $new_dir/logs:/var/log/nginx"
+  EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost/" 10 3
   log_success "Production now serving from $new_dir"
@@ -133,6 +154,9 @@ rc_rollback() {
   [[ -d "$dir" ]] || die "Dir $dir not found"
 
   log_warn "Rolling back containers to $dir"
+  require_cmd jq
+  local release_id
+  release_id=$(jq -r '.id' "$dir/release.json" 2>/dev/null || echo '')
   CONTAINER_NAME="rp-prod"
   HTTP_PORT=80 HTTPS_PORT=443
   VOLUME_FLAGS="-v $dir/nginx.conf:/etc/nginx/nginx.conf:ro \
@@ -140,8 +164,34 @@ rc_rollback() {
                 -v $dir/ports.conf:/etc/nginx/ports.conf:ro  \
                 -v $dir/www:/var/www:ro                      \
                 -v $dir/logs:/var/log/nginx"
+  EXTRA_DOCKER_OPTS="-e RELEASE_ID=$release_id"
   dk_run
   probe_http "https://localhost/" 10 3
   log_success "Rolled back to $dir"
+}
+
+############################################################################
+# 5. rc_list_releases – list prod releases with manifest note
+############################################################################
+rc_list_releases() {
+  local prod_root="/home/proxyuser"
+  require_cmd jq
+  mapfile -t dirs < <(find "$prod_root" -maxdepth 1 -type d -name 'Nginx-prod-*' | sort)
+  for dir in "${dirs[@]}"; do
+    local id="${dir##*/Nginx-}"
+    local note=""
+    [[ -f "$dir/release.json" ]] && note=$(jq -r '.note' "$dir/release.json")
+    printf '%s\t%s\n' "$id" "$note"
+  done
+}
+
+############################################################################
+# 6. rc_describe_release <dir> – pretty-print manifest
+############################################################################
+rc_describe_release() {
+  local dir="$1"
+  [[ -n "$dir" ]] || die "Usage: rc_describe_release <dir>"
+  [[ -f "$dir/release.json" ]] || die "release.json not found in $dir"
+  manifest_pretty "$dir/release.json"
 }
 
