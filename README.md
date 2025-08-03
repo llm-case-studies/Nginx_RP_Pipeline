@@ -23,3 +23,5 @@ This project was intentionally separated from the main application repository (`
 1.  Clone this repository.
 2.  Install the required software (see [Requirements](./docs/REQUIREMENTS.md)).
 3.  Follow the instructions in the [Admin Guide](./docs/ADMIN_GUIDE.md) to perform your first deployment.
+
+- Container naming: local=nginx-rp-local, stage=nginx-rp-stage, preprod=nginx-rp-pre-prod, prod=nginx-rp-prod. Override in deploy.conf if your org prefers different names.

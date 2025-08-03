@@ -27,6 +27,11 @@ PORT_TPL_DIR="$WORKSPACE_ROOT/ports"
 PROD_SSH="${PROD_SSH:-proxyuser@prod}"
 PROD_ROOT="${PROD_ROOT:-/home/proxyuser/NgNix-RP}"
 
+CNT_LOCAL=${CNT_LOCAL:-nginx-rp-local}
+CNT_STAGE=${CNT_STAGE:-nginx-rp-stage}
+CNT_PREPROD=${CNT_PREPROD:-nginx-rp-pre-prod}
+CNT_PROD=${CNT_PROD:-nginx-rp-prod}
+
 # These envs can be overridden by caller
 IMAGE="${IMAGE:-nginx:latest}"
 NETWORK_NAME="rp-net"
@@ -81,7 +86,7 @@ rc_build_local() {
 
   log_success "Runtime candidate built at $RUNTIME_DIR"
 
-  CONTAINER_NAME="rp-local"
+  CONTAINER_NAME="$CNT_LOCAL"
   HTTP_PORT=8080 HTTPS_PORT=8443
   VOLUME_FLAGS="-v $RUNTIME_DIR/nginx.conf:/etc/nginx/nginx.conf:ro \
                 -v $RUNTIME_DIR/conf.d:/etc/nginx/conf.d:ro          \
@@ -104,8 +109,8 @@ rc_start() {
   [[ -z "$env" ]] && die "Usage: rc_start --env <stage|preprod>"
 
   case "$env" in
-    stage)     CONTAINER_NAME="rp-stage"   ; cp "$PORT_TPL_DIR/stage.conf"   "$RUNTIME_DIR/ports.conf";;
-    preprod)   CONTAINER_NAME="rp-preprod" ; cp "$PORT_TPL_DIR/preprod.conf" "$RUNTIME_DIR/ports.conf";;
+    stage)     CONTAINER_NAME="$CNT_STAGE"   ; cp "$PORT_TPL_DIR/stage.conf"   "$RUNTIME_DIR/ports.conf";;
+    preprod)   CONTAINER_NAME="$CNT_PREPROD" ; cp "$PORT_TPL_DIR/preprod.conf" "$RUNTIME_DIR/ports.conf";;
     *) die "Unknown env $env";;
   esac
 
@@ -135,7 +140,7 @@ rc_deploy_prod() {
   log_info "🚀 Promoting runtime to $new_dir"
   cp -r "$RUNTIME_DIR" "$new_dir"
 
-  CONTAINER_NAME="rp-prod"
+  CONTAINER_NAME="$CNT_PROD"
   HTTP_PORT=80 HTTPS_PORT=443
   VOLUME_FLAGS="-v $new_dir/nginx.conf:/etc/nginx/nginx.conf:ro \
                 -v $new_dir/conf.d:/etc/nginx/conf.d:ro          \
@@ -160,7 +165,7 @@ rc_rollback() {
   require_cmd jq
   local release_id
   release_id=$(jq -r '.id' "$dir/release.json" 2>/dev/null || echo '')
-  CONTAINER_NAME="rp-prod"
+  CONTAINER_NAME="$CNT_PROD"
   HTTP_PORT=80 HTTPS_PORT=443
   VOLUME_FLAGS="-v $dir/nginx.conf:/etc/nginx/nginx.conf:ro \
                 -v $dir/conf.d:/etc/nginx/conf.d:ro          \
@@ -205,7 +210,7 @@ rc_clone_prod() {
   local dest="${1:-$RUNTIME_DIR/prod-clone}"
   require_cmd rsync
   local ts
-  ts=$(ssh_cmd "docker inspect rp-prod --format '{{ index .HostConfig.Binds 0 }}'" \
+  ts=$(ssh_cmd "docker inspect ${CNT_PROD:-$PROD_CONTAINER} --format '{{ index .HostConfig.Binds 0 }}'" \
         | xargs dirname | awk -F'/' '{print $NF}')
   [[ -n "$ts" ]] || die "Unable to determine prod runtime directory"
   local src="$PROD_ROOT/$ts"
