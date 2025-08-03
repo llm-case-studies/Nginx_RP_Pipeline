@@ -13,6 +13,26 @@ It was designed to solve the challenges of manual, error-prone Nginx configurati
 - **Safety Through Automation:** Every step is designed to be automated and validated to prevent human error and minimize the risk of production outages.
 - **Immutability (The "Pull" Model):** The pipeline operates on a "pull" model. The central deployment script is the single source of truth. It *pulls* application artifacts from a designated location. Application build processes never "push" or write directly to the proxy's configuration.
 
+## 2.1. Multi-Stage Pipeline Architecture
+
+The pipeline implements a **seed → wip → prep → ship** architecture for safe, iterative development and deployment:
+
+- **🌱 seed**: Exact production replica for troubleshooting and debugging
+- **🔧 wip**: Work-in-progress development workspace for making changes  
+- **📦 prep**: Clean build ready for staging validation
+- **🚀 ship**: Production deployment
+
+### Stage Separation
+Each stage maintains complete isolation:
+- **Separate workspaces**: `/workspace/seed`, `/workspace/wip`, `/runtime` (prep)
+- **Separate containers**: `nginx-rp-seed`, `nginx-rp-wip`, `nginx-rp-prep` 
+- **Separate ports**: 8080 (seed), 8081 (wip), 8082 (prep)
+- **Independent lifecycles**: Changes flow seed→wip→prep, never backwards
+
+### External Services vs Pipeline Apps
+- **External Services** (e.g., `vaultwarden-ship`): Stable, single instance, don't go through pipeline
+- **Pipeline Apps**: Go through full seed→wip→prep→ship cycle with port allocation per stage
+
 ## 3. Key Components
 
 ### 3.1. The `proxy-container.sh` Script
@@ -44,10 +64,50 @@ This file is the single source of truth for the pipeline. It is a JSON file that
   }
   ```
 
-### 3.4. The Application Artifact Bundle
-This is the "contract" between an application team and the pipeline. To be deployed, an application must provide a versioned `.zip` archive containing:
-1.  `dist/`: A directory with the application's static build assets.
-2.  `app.conf`: The Nginx `server` block configuration for that specific application.
+### 3.4. Enhanced Application Artifact Bundle
+
+The "contract" between application teams and the pipeline has been enhanced to support both static assets and backend services. Teams provide a versioned `.zip` archive containing:
+
+**Structure:**
+```
+awesome-app-v2.1.zip
+├── dist/                    # Static build assets
+├── nginx/
+│   └── awesome-app.conf     # Nginx server block
+└── containers/              # Backend service definitions (optional)
+    └── awesome-app.yml      # Docker Compose-style container specs
+```
+
+**Static Site Example:**
+```nginx
+# nginx/awesome-app.conf
+server {
+    include /etc/nginx/ports.conf;  # Dynamic port allocation
+    server_name awesome-app.pronunco.com;
+    
+    location / {
+        root /var/www/awesome-app/;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+**API Service Example:**
+```yaml
+# containers/awesome-api.yml
+services:
+  awesome-api:
+    image: awesome-team/api:v2.1
+    ports: ["${APP_PORT}:3000"]
+    environment:
+      - NODE_ENV=${STAGE}
+```
+
+**Dynamic Port Allocation:**
+- Each stage gets unique port ranges: seed (9000-9999), wip (10000-10999), prep (11000-11999)
+- Port = `stage_base + hash(app_name) % 900 + 100`
+- Templates like `${APP_PORT}` and `${STAGE}` are substituted per deployment stage
 
 ### 3.5. Local SSL (`mkcert`)
 To enable high-fidelity local development and testing, the pipeline is designed to work with `mkcert`. This allows developers to generate locally-trusted SSL certificates and run a full HTTPS environment on their machine that perfectly mimics production.

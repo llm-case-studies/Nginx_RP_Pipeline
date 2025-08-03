@@ -1,17 +1,24 @@
 # Application Developer's Guide
 
-This guide explains how to prepare your application to be hosted by the Nginx Reverse Proxy Pipeline.
+This guide explains how to prepare your application to be hosted by the Nginx Reverse Proxy Pipeline using the new **seed → wip → prep → ship** architecture.
 
-## 1. The Developer Contract
+## 1. The Enhanced Developer Contract
 
-To have your application deployed, you must provide a single, versioned `.zip` file known as the **Application Artifact Bundle**. This bundle is the contract between your application and the deployment pipeline.
+To have your application deployed, you must provide a single, versioned `.zip` file known as the **Enhanced Application Artifact Bundle**. This bundle supports both static sites and backend services.
 
-The bundle must be named `<app-name>-<version>.zip` (e.g., `pronunco-ui-v1.2.0.zip`).
+**Bundle Structure:**
+```
+<app-name>-<version>.zip
+├── dist/                    # Static assets (required)
+├── nginx/                   # Nginx configuration (required)  
+│   └── <app-name>.conf
+└── containers/              # Backend services (optional)
+    └── <app-name>.yml
+```
 
-It must contain the following two items in its root:
-
-1.  **`dist/` directory:** This folder must contain all the static, compiled assets required to run your application (e.g., `index.html`, CSS, JavaScript files).
-2.  **`app.conf` file:** This is your Nginx `server` block configuration.
+**Examples:**
+- `pronunco-ui-v1.2.0.zip` (static site)
+- `pronunco-api-v2.1.0.zip` (API service with backend)
 
 ## 2. Creating Your `app.conf` File
 
