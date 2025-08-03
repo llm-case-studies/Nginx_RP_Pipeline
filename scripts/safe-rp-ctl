@@ -38,14 +38,36 @@ case "$cmd" in
   rollback)
     rc_rollback "$@"
     ;;
+  fetch-seed)
+    rc_fetch_seed "$@"
+    ;;
   clone-prod)
-    rc_clone_prod "$@"
+    log_warn "Command 'clone-prod' is deprecated. Use 'fetch-seed' instead."
+    rc_fetch_seed "$@"
     ;;
   list-releases)
     rc_list_releases
     ;;
   describe-release)
     rc_describe_release "$@"
+    ;;
+  init-wip)
+    rc_init_wip "$@"
+    ;;
+  build-prep)
+    rc_build_prep "$@"
+    ;;
+  start-seed)
+    rc_start_seed "$@"
+    ;;
+  start-wip)
+    rc_start_wip "$@"
+    ;;
+  start-prep)
+    rc_start_prep "$@"
+    ;;
+  stop-all)
+    rc_stop_all "$@"
     ;;
   *)
     log_error "Unknown command: $cmd"

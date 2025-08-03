@@ -9,9 +9,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # Bring in core helpers -------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=core.sh
-source "$SCRIPT_DIR/core.sh"
+source "$LIB_DIR/core.sh"
 
 require_cmd docker
 require_cmd curl

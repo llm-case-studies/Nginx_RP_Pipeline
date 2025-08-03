@@ -5,9 +5,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=core.sh
-source "$SCRIPT_DIR/core.sh"
+source "$LIB_DIR/core.sh"
 
 # ssh_cmd <command>
 # Executes a command on the production host defined by PROD_SSH

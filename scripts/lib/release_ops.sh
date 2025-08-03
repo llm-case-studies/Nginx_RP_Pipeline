@@ -10,13 +10,13 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=core.sh
-source "$SCRIPT_DIR/core.sh"
+source "$LIB_DIR/core.sh"
 # shellcheck source=docker_ops.sh
-source "$SCRIPT_DIR/docker_ops.sh"
+source "$LIB_DIR/docker_ops.sh"
 # shellcheck source=manifest_ops.sh
-source "$SCRIPT_DIR/manifest_ops.sh"
+source "$LIB_DIR/manifest_ops.sh"
 
 ### CONFIG ----------------------------------------------------------------
 WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -204,19 +204,253 @@ rc_describe_release() {
 }
 
 ############################################################################
-# 7. rc_clone_prod [dest] – copy current prod runtime
+# 7. rc_fetch_seed [dest] – fetch production snapshot to workspace
 ############################################################################
-rc_clone_prod() {
-  local dest="${1:-$RUNTIME_DIR/prod-clone}"
+rc_fetch_seed() {
+  local dest="${1:-$WORKSPACE_ROOT/workspace/seed}"
   require_cmd rsync
-  local ts
-  ts=$(ssh_cmd "docker inspect ${CNT_PROD:-$PROD_CONTAINER} --format '{{ index .HostConfig.Binds 0 }}'" \
-        | xargs dirname | awk -F'/' '{print $NF}')
-  [[ -n "$ts" ]] || die "Unable to determine prod runtime directory"
-  local src="$PROD_ROOT/$ts"
-  log_info "Cloning prod runtime from $src to $dest"
+  
+  # First try the legacy container name, then the new naming convention
+  local container_name="${PROD_CONTAINER:-$CNT_PROD}"
+  local src_dir=""
+  
+  # Try to get the runtime directory from container mounts
+  local first_bind
+  first_bind=$(ssh_cmd "docker inspect $container_name --format '{{ index .HostConfig.Binds 0 }}' 2>/dev/null" || echo "")
+  
+  if [[ -n "$first_bind" ]]; then
+    # Extract the host path from the bind mount
+    local host_path="${first_bind%%:*}"
+    # If it's a file mount (like nginx.conf), get its directory
+    if [[ "$host_path" == *".conf" ]] || [[ "$host_path" == *".json" ]]; then
+      src_dir=$(dirname "$host_path")
+    else
+      # If it's a directory mount, check if it looks like a timestamped release
+      local dir_name
+      dir_name=$(basename "$host_path")
+      if [[ "$dir_name" =~ ^Nginx-[0-9]{8}-[0-9]{6}$ ]]; then
+        src_dir="$host_path"
+      else
+        # Legacy setup - use the parent directory
+        src_dir="$host_path"
+      fi
+    fi
+  fi
+  
+  # If we couldn't determine source directory, list available containers and let user choose
+  if [[ -z "$src_dir" ]]; then
+    log_warn "Container '$container_name' not found. Available containers:"
+    local containers
+    containers=$(ssh_cmd "docker ps --format '{{.Names}}'")
+    
+    if [[ -z "$containers" ]]; then
+      log_error "No containers found on production server"
+      die "No running containers available to clone from"
+    fi
+    
+    echo "Available containers:"
+    echo "$containers" | nl -w2 -s') '
+    echo
+    read -r -p "Select container number (or enter container name): " choice
+    
+    if [[ "$choice" =~ ^[0-9]+$ ]]; then
+      container_name=$(echo "$containers" | sed -n "${choice}p")
+    else
+      container_name="$choice"
+    fi
+    
+    [[ -n "$container_name" ]] || die "No container selected"
+    log_info "Using container: $container_name"
+    
+    # Try again with selected container
+    first_bind=$(ssh_cmd "docker inspect $container_name --format '{{ index .HostConfig.Binds 0 }}'" || echo "")
+    if [[ -n "$first_bind" ]]; then
+      local host_path="${first_bind%%:*}"
+      if [[ "$host_path" == *".conf" ]] || [[ "$host_path" == *".json" ]]; then
+        src_dir=$(dirname "$host_path")
+      else
+        src_dir="$host_path"
+      fi
+    fi
+  fi
+  
+  [[ -n "$src_dir" ]] || die "Unable to determine prod runtime directory from container $container_name"
+  
+  log_info "Fetching production seed from $src_dir to $dest"
   mkdir -p "$dest"
-  rsync -az "$PROD_SSH:$src/" "$dest/"
-  log_success "Prod runtime cloned to $dest"
+  rsync -az "$PROD_SSH:$src_dir/" "$dest/"
+  log_success "Production seed fetched to $dest"
+}
+
+############################################################################
+# 8. rc_init_wip – initialize work-in-progress from seed
+############################################################################
+rc_init_wip() {
+  local seed_dir="$WORKSPACE_ROOT/workspace/seed"
+  local wip_dir="$WORKSPACE_ROOT/workspace/wip"
+  
+  if [[ ! -d "$seed_dir" ]]; then
+    die "No seed found at $seed_dir. Run 'fetch-seed' first."
+  fi
+  
+  log_info "Initializing WIP workspace from seed"
+  mkdir -p "$wip_dir"
+  
+  # Copy seed to wip
+  cp -r "$seed_dir"/* "$wip_dir/"
+  
+  log_success "WIP workspace initialized at $wip_dir"
+}
+
+############################################################################
+# 9. rc_build_prep – build clean runtime from wip + new artifacts
+############################################################################
+rc_build_prep() {
+  local wip_dir="$WORKSPACE_ROOT/workspace/wip"
+  
+  if [[ ! -d "$wip_dir" ]]; then
+    log_warn "No WIP workspace found. Creating scaffold..."
+    mkdir -p "$wip_dir/info_pages"
+    mkdir -p "$wip_dir/certs"
+    mkdir -p "$wip_dir/nginx-logs"
+  fi
+  
+  # Generate local certs
+  gen_dev_certs
+  
+  # Process any new artifacts from intake
+  if [[ -d "$INTAKE_DIR" ]] && ls "$INTAKE_DIR"/*.zip >/dev/null 2>&1; then
+    log_info "Processing new artifacts from $INTAKE_DIR"
+    for zip in "$INTAKE_DIR"/*.zip; do
+      log_info "Processing: $(basename "$zip")"
+      # TODO: Extract and process zip files
+    done
+  fi
+  
+  # Build clean runtime from wip
+  log_info "Building prep runtime from WIP workspace"
+  rm -rf "$RUNTIME_DIR"
+  mkdir -p "$RUNTIME_DIR"
+  
+  # Copy wip content to runtime
+  cp -r "$wip_dir"/* "$RUNTIME_DIR/" 2>/dev/null || true
+  
+  # Ensure local certs are used
+  cp "$WORKSPACE_ROOT/certs"/* "$RUNTIME_DIR/certs/" 2>/dev/null || true
+  
+  log_success "Prep runtime built at $RUNTIME_DIR"
+}
+
+############################################################################
+# 10. rc_start_seed – start production replica container (port 8080)
+############################################################################
+rc_start_seed() {
+  local seed_dir="$WORKSPACE_ROOT/workspace/seed"
+  
+  if [[ ! -d "$seed_dir" ]]; then
+    die "No seed found at $seed_dir. Run 'fetch-seed' first."
+  fi
+  
+  local container_name="nginx-rp-seed"
+  
+  # Stop if already running
+  docker stop "$container_name" 2>/dev/null || true
+  docker rm "$container_name" 2>/dev/null || true
+  
+  log_info "Starting seed container (production replica) on port 8080"
+  
+  # Start container with production-like mounting but local ports
+  docker run -d \
+    --name "$container_name" \
+    -p 8080:80 \
+    -p 8443:443 \
+    -v "$seed_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$seed_dir/certs:/etc/nginx/certs:ro" \
+    -v "$seed_dir/info_pages:/var/www/info_pages:ro" \
+    -v "$seed_dir/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
+    nginx:latest
+  
+  log_success "Seed container started: http://localhost:8080, https://localhost:8443"
+}
+
+############################################################################
+# 11. rc_start_wip – start development container (port 8081)
+############################################################################
+rc_start_wip() {
+  local wip_dir="$WORKSPACE_ROOT/workspace/wip"
+  
+  if [[ ! -d "$wip_dir" ]]; then
+    die "No WIP workspace found at $wip_dir. Run 'init-wip' first."
+  fi
+  
+  local container_name="nginx-rp-wip"
+  
+  # Stop if already running
+  docker stop "$container_name" 2>/dev/null || true
+  docker rm "$container_name" 2>/dev/null || true
+  
+  log_info "Starting WIP container (development workspace) on port 8081"
+  
+  # Start container with local development certs
+  docker run -d \
+    --name "$container_name" \
+    -p 8081:80 \
+    -p 8444:443 \
+    -v "$wip_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$WORKSPACE_ROOT/certs:/etc/nginx/certs:ro" \
+    -v "$wip_dir/info_pages:/var/www/info_pages:ro" \
+    -v "$wip_dir/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
+    nginx:latest
+  
+  log_success "WIP container started: http://localhost:8081, https://localhost:8444"
+}
+
+############################################################################
+# 12. rc_start_prep – start prep container (port 8082)
+############################################################################
+rc_start_prep() {
+  if [[ ! -d "$RUNTIME_DIR" ]]; then
+    die "No prep runtime found at $RUNTIME_DIR. Run 'build-prep' first."
+  fi
+  
+  local container_name="nginx-rp-prep"
+  
+  # Stop if already running
+  docker stop "$container_name" 2>/dev/null || true
+  docker rm "$container_name" 2>/dev/null || true
+  
+  log_info "Starting prep container (clean build) on port 8082"
+  
+  # Start container with local development certs
+  docker run -d \
+    --name "$container_name" \
+    -p 8082:80 \
+    -p 8445:443 \
+    -v "$RUNTIME_DIR/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$WORKSPACE_ROOT/certs:/etc/nginx/certs:ro" \
+    -v "$RUNTIME_DIR/info_pages:/var/www/info_pages:ro" \
+    -v "$RUNTIME_DIR/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
+    nginx:latest
+  
+  log_success "Prep container started: http://localhost:8082, https://localhost:8445"
+}
+
+############################################################################
+# 13. rc_stop_all – stop all local containers
+############################################################################
+rc_stop_all() {
+  log_info "Stopping all local containers"
+  
+  for container in nginx-rp-seed nginx-rp-wip nginx-rp-prep; do
+    if docker ps -q -f name="$container" | grep -q .; then
+      log_info "Stopping $container"
+      docker stop "$container"
+      docker rm "$container"
+    else
+      log_info "$container not running"
+    fi
+  done
+  
+  log_success "All local containers stopped"
 }
 
