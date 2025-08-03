@@ -10,13 +10,13 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=core.sh
-source "$SCRIPT_DIR/core.sh"
+source "$LIB_DIR/core.sh"
 # shellcheck source=docker_ops.sh
-source "$SCRIPT_DIR/docker_ops.sh"
+source "$LIB_DIR/docker_ops.sh"
 # shellcheck source=manifest_ops.sh
-source "$SCRIPT_DIR/manifest_ops.sh"
+source "$LIB_DIR/manifest_ops.sh"
 
 ### CONFIG ----------------------------------------------------------------
 WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
