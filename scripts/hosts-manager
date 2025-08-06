@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# hosts-manager - Switch between original and development hosts file
+
+set -euo pipefail
+
+HOSTS_FILE="/etc/hosts"
+HOSTS_BACKUP="/etc/hosts.original"
+HOSTS_DEV="/etc/hosts.dev"
+
+usage() {
+    echo "Usage: $0 {dev|prod|status|setup}"
+    echo "  dev    - Switch to development hosts (local domains)"
+    echo "  prod   - Switch back to original hosts" 
+    echo "  status - Show current hosts mode"
+    echo "  setup  - Create development hosts file"
+    exit 1
+}
+
+check_sudo() {
+    if [[ $EUID -eq 0 ]]; then
+        echo "Don't run as root. Script will use sudo when needed."
+        exit 1
+    fi
+}
+
+setup_dev_hosts() {
+    echo "Setting up development hosts file..."
+    
+    # Backup original if not exists
+    if [[ ! -f "$HOSTS_BACKUP" ]]; then
+        echo "Backing up original hosts file..."
+        sudo cp "$HOSTS_FILE" "$HOSTS_BACKUP"
+    fi
+    
+    # Create dev hosts file
+    echo "Creating development hosts file..."
+    sudo cp "$HOSTS_BACKUP" "$HOSTS_DEV"
+    
+    # Add dev entries
+    echo "
+# WIP Pipeline Local Development - Added by hosts-manager
+127.0.0.1 iLegalFlow.com
+127.0.0.1 VW.iLegalFlow.com  
+127.0.0.1 Crypto-Fakes.com
+127.0.0.1 cutietraders.com
+127.0.0.1 CutieTraders.com
+127.0.0.1 iMediFlow.com" | sudo tee -a "$HOSTS_DEV" > /dev/null
+    
+    echo "✅ Development hosts file created at $HOSTS_DEV"
+}
+
+switch_to_dev() {
+    if [[ ! -f "$HOSTS_DEV" ]]; then
+        echo "Development hosts file not found. Run: $0 setup"
+        exit 1
+    fi
+    
+    echo "Switching to development mode..."
+    sudo cp "$HOSTS_DEV" "$HOSTS_FILE"
+    echo "✅ Switched to development hosts"
+    echo "🌐 Local domains now point to 127.0.0.1"
+}
+
+switch_to_prod() {
+    if [[ ! -f "$HOSTS_BACKUP" ]]; then
+        echo "Original hosts backup not found!"
+        exit 1
+    fi
+    
+    echo "Switching to production mode..."
+    sudo cp "$HOSTS_BACKUP" "$HOSTS_FILE"
+    echo "✅ Switched to original hosts"
+    echo "🌐 Domains now resolve normally"
+}
+
+show_status() {
+    echo "Hosts Manager Status:"
+    echo "====================="
+    
+    if [[ -f "$HOSTS_BACKUP" ]]; then
+        echo "✅ Original backup exists"
+    else
+        echo "❌ No original backup found"
+    fi
+    
+    if [[ -f "$HOSTS_DEV" ]]; then
+        echo "✅ Development hosts exists"
+    else
+        echo "❌ No development hosts found"
+    fi
+    
+    echo ""
+    echo "Current active domains pointing to localhost:"
+    grep "127.0.0.1.*\.com" "$HOSTS_FILE" || echo "None found"
+}
+
+main() {
+    check_sudo
+    
+    case "${1:-}" in
+        setup)
+            setup_dev_hosts
+            ;;
+        dev)
+            switch_to_dev
+            ;;
+        prod)
+            switch_to_prod
+            ;;
+        status)
+            show_status
+            ;;
+        *)
+            usage
+            ;;
+    esac
+}
+
+main "$@"
