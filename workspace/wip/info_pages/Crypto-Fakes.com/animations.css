@@ -1,0 +1,149 @@
+/* Crazy animations */
+@keyframes crazy-shake {
+    /* ... */
+  }
+  @keyframes crazy-spin {
+    /* ... */
+  }
+  
+  /* Mild animations */
+  @keyframes mild-fade {
+    /* ... */
+  }
+  @keyframes mild-bounce {
+    /* ... */
+  }
+
+@keyframes navbar-dance {
+  0% { 
+    transform: 
+    /*translate(0, 0)  */
+    rotateX(0deg) 
+    rotateY(0deg)
+    rotateZ(0deg);  
+  }
+  10% { 
+    transform: 
+    /* translate(100%, -12.5%)  */
+    rotateX(30deg) 
+    rotateY(30deg) 
+    rotateZ(30deg); 
+  }
+  20% { 
+    transform: 
+    /* translate(200%, -25%)  */
+    /* rotateY(45deg)   */
+    rotateX(60deg) 
+    rotateY(60deg) 
+    rotateZ(60deg); 
+  }
+  30% { 
+    transform: 
+    /* translate(300%, -20%)  */
+    rotateX(90deg)  
+    rotateY(90deg)  
+    rotateZ(90deg);
+    /* rotate(90deg);  */
+  }
+  40% { 
+    transform: 
+    /* translate(400%, -10%)  */
+    /* rotateY(135deg)  */
+    rotateX(120deg)
+    rotateY(120deg)
+    rotateZ(120deg); 
+  }
+  50% { 
+    transform: 
+    /* translate(400%, 0)  */
+    rotateX(180deg) 
+    rotateY(180deg) 
+    rotateZ(180deg) ;
+    /* rotate(180deg); */
+  }
+  60% { 
+    transform: 
+    /* translate(300%, 10%)  */
+    rotateX(240deg)
+    rotateY(240deg)
+    rotateZ(240deg); 
+  }
+  70% { 
+    transform: 
+    /* translate(200%, 20%)  */
+    rotateX(270deg)
+    rotateY(270deg)
+    rotateZ(270deg); 
+  }
+  80% { 
+    transform: 
+    /* translate(100%, 12.5%)  */
+    rotateX(300deg)
+    rotateY(300deg)
+    rotateZ(300deg); 
+  }
+  90% { 
+    transform: 
+    /* translate(0, 5%)  */
+    rotateX(330deg)
+    rotateY(330deg)
+    rotateZ(330deg); 
+  }
+  100% { 
+    transform: 
+    translate(0, 0) 
+    rotateX(360deg) 
+    rotateY(360deg) 
+    rotateZ(360deg); 
+  }
+}
+
+/* Floating Prompt Styles */
+#animation-prompt {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  display: none; /* Hidden by default */
+  opacity: 0; /* Start invisible */
+  transform: scale(0); /* Start minimized */
+  animation: none; /* No animation initially */
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+#animation-prompt button {
+  margin: 5px;
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#animation-prompt .allow {
+  background-color: #4caf50;
+  color: white;
+}
+
+#animation-prompt .mild {
+  background-color: #ffc107;
+  color: black;
+}
+
+#animation-prompt .disallow {
+  background-color: #f44336;
+  color: white;
+}
+
+/* Animation keyframes reused from navbar-dance */
+@keyframes prompt-dance {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(10%, -10%) rotate(15deg); }
+  50% { transform: translate(0%, 0%) rotate(0deg); }
+  75% { transform: translate(-10%, 10%) rotate(-15deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}

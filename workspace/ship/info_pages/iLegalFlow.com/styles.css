@@ -1,0 +1,237 @@
+body {
+    background-color: #f8f9fa;
+    padding: 20px;
+    font-family: sans-serif;
+  }
+  
+  h1 {
+    color: #333;
+  }
+  
+  .container {
+    max-width: 960px;
+    /* Adjust as needed */
+    margin: auto;
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  }
+  
+  .sidebar {
+    height: 100vh;
+    padding: 20px;
+    border-right: 1px solid #ddd;
+    /* Maintain the original right border */
+    background-color: bisque;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    overflow-y: auto;
+    transition: width 1.0s ease;
+  }
+  
+  .sidebar button#toggle-sidebar {
+    font-size: 24px;
+    /* Double the font size for a larger button */
+    width: 40px;
+    /* Adjust the width to fit the larger button */
+    height: 40px;
+    /* Adjust the height to fit the larger button */
+    display: flex;
+    /* Use flexbox to center the content */
+    align-items: center;
+    /* Vertically center the content */
+    justify-content: center;
+    /* Horizontally center the content */
+  }
+  
+  .sidebar button#toggle-sidebar span {
+    display: block;
+    /* Show the icon (was previously set to none) */
+  }
+  
+  /* Add on-hover text */
+  .sidebar button#toggle-sidebar:hover::after {
+    content: "Toggle Menu";
+    /* Text to display on hover */
+    position: absolute;
+    left: 110%;
+    /* Position the text to the right of the button */
+    top: 50%;
+    transform: translateY(-50%);
+    /* Vertically center the text */
+    background-color: #333;
+    /* Dark background for the text */
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+  }
+  
+  .sidebar ul {
+    margin-top: 32px;
+    /* Move list items down */
+    list-style-type: none;
+    padding-left: 0;
+  }
+  
+  .sidebar a span {
+    padding-right: 10px;
+    /* Add right padding to text */
+  }
+  
+  .content {
+    margin-left: 300px;
+    /* Adjust for sidebar width */
+    padding: 20px;
+    transition: margin-left 2.3s ease;
+  }
+  
+  .content-expanded {
+    margin-left: 20px;
+  }
+  
+  .sidebar a:hover {
+    background-color: #e9ecef;
+    border-radius: 5px;
+  }
+  
+  .sidebar .fs-5 {
+    font-weight: 600;
+    margin-bottom: 15px;
+  }
+  
+  .sidebar-collapsed {
+    width: 110px;
+    /* Reduced width when collapsed */
+    height: 100vh;
+    padding: 20px;
+    border-right: 1px solid #ddd;
+    /* Maintain the original right border */
+    background-color: bisque;
+    position: fixed;
+    top: 0;
+    left: 0;
+    overflow-y: auto;
+    transition: width 1.0s ease;
+  }
+  
+  .sidebar-collapsed .fs-5 {
+    display: none;
+    /* Hide the title when collapsed */
+  }
+  
+  .sidebar-collapsed ul {
+    padding-left: 0;
+    /* Remove list padding when collapsed */
+  }
+  
+  .sidebar-collapsed a {
+    display: flex;
+    flex-direction: column;
+    /* Stack the icon and text vertically */
+    align-items: baseline;
+    justify-content: center;
+    padding: 16px 0;
+    text-decoration: none;
+    color: inherit;
+    margin-bottom: 5px;
+    width: 100%;
+  }
+  
+  .sidebar a {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 16px 15px;
+    text-decoration: none;
+    color: inherit;
+    margin-bottom: 5px;
+    width: 100%;
+    /* Set width to 100% to fill the sidebar */
+  }
+  
+  .sidebar a i {
+    /* Target Font Awesome icons */
+    font-size: 48px;
+    /* Match the toggle button size */
+    margin-right: 16px;
+    /* Adjust spacing between icon and text */
+    width: 64px;
+    align-content: center;
+    opacity: 0.4;
+    /* Set opacity to 70% */
+  }
+  
+  .sidebar-collapsed a i {
+    font-size: 48px;
+    /* Match the toggle button size */
+    margin-right: 0px;
+    /* Adjust spacing between icon and text */
+    width: 64px;
+    align-content: center;
+    opacity: 0.4;
+    /* Set opacity to 70% */
+  }
+  
+  .sidebar-collapsed a span {
+    display: none;
+    visibility: hidden;
+    /* Hide the text, but keep the space it occupies */
+    padding: 0%;
+    width: 0%;
+  }
+  
+  .btn-toggle {
+    width: 100%;
+    text-align: left;
+  }
+
+  .sidebar-logo {
+    width: 100px;  /* Adjust the size as needed */
+    height: auto;
+    margin-bottom: 20px;  /* Add some space below the logo */
+    display: block;  /* Make the image a block element to center it */
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .demo-image {
+    position: relative; /* Create a positioning context */
+    width: 100%;
+    height: 700px /* Adjust as needed */;
+    overflow: fit-content;
+  }
+  
+  .demo-image img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.3;
+    /*z-index: -1;  Place the image behind the content */
+  }
+  
+  .demo-content {
+    position: absolute; /* Position the content absolutely within the image */
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); /* Center the content */
+    z-index: 1;
+    padding: 20px;
+    width: 80%; /* Adjust the width as needed */
+    background-color: rgba(255, 255, 255, 0.3); /* Semi-transparent white background */
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0,   
+   0.1);
+  }
+  
+  .demo-content h2 {
+    background-color: #fff; /* White background for the header */
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+  }
