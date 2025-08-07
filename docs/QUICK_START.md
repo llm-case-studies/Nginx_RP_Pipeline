@@ -18,15 +18,17 @@ sudo apt update && sudo apt install -y docker.io mkcert jq unzip rsync
 mkcert -install
 ```
 
-### 2 · Smoke-test the pipeline locally
+### 2 · Pipeline workflow with validation and locking
 
 | Goal | Command | What to watch for |
 | :--- | :--- | :--- |
-| Blank bootstrap | `./scripts/safe-rp-ctl build-local` | • `runtime/` tree appears<br>• `rp-local` container starts ( `docker ps` )<br>• Browser hits `https://localhost:8443` without 502 |
-| Overlay new zips | Drop two .zips into `/mnt/pipeline-intake` then:<br>`./scripts/safe-rp-ctl build-local --overlay-only` | Only those two apps’ folders update under `runtime/www/`; container is not restarted. |
-| Promote to stage | `./scripts/safe-rp-ctl start --env stage` (on stage box) | Container `rp-stage` mounts the same runtime; health probe passes. |
-| Deploy to prod | `./scripts/safe-rp-ctl deploy-prod` (on prod) | New timestamp dir in `/home/proxyuser/`, `rp-prod` re-mounts, `list-releases` shows it as current. |
-| Clone prod → debug | `./scripts/safe-rp-ctl clone-prod` (dev laptop) | Local `runtime/` now mirrors live prod; you can reproduce issues. |
+| Get production snapshot | `./scripts/safe-rp-ctl fetch-seed` | • `workspace/seed/` created with prod certificates<br>• All production configs replicated locally |
+| Create integration workspace | `./scripts/safe-rp-ctl init-wip` | • `workspace/wip/` created from seed<br>• Ready for app team integration |
+| **Manual fixes (if needed)** | Edit files in `workspace/wip/` | • Fix nginx configs, certificates, routing<br>• Test with `start-wip` |
+| **Lock working state** | `./scripts/safe-rp-ctl lock-wip "Fixed integration"` | • WIP workspace protected from overwrites<br>• Manual changes preserved |
+| Build clean runtime | `./scripts/safe-rp-ctl build-prep` | • ✅ **Validation**: WIP completeness checked<br>• Clean `runtime/` directory created |
+| Build deployment package | `./scripts/safe-rp-ctl build-ship` | • ✅ **Validation**: Prep runtime verified<br>• Zero-entropy ship package with all certificates |
+| Deploy to environments | `./start-stage.sh` (from ship package) | • **No more broken deployments**<br>• All certificates present and valid |
 
 ### 3 · Guide for application teams
 
@@ -76,11 +78,46 @@ Release manager then runs `build-local` (overlay) → `stage` → `preprod` → 
 | Assets-only bundles (images / docs) | ✅ | Just zip with a dummy `app.conf` that serves files. |
 | Multiple SPAs in one zip | ⚠️ Not recommended | Better to zip per-app for granular rollbacks. |
 
-### 5 · Checklist before hitting “deploy-prod”
+### 5 · WIP Management and Manual Integration
+
+When app integration requires manual fixes (port conflicts, config changes, etc.):
+
+```bash
+# After manual fixes make everything work:
+./scripts/safe-rp-ctl lock-wip "Fixed port conflicts + upstream routing"
+
+# Check lock status anytime:
+./scripts/safe-rp-ctl wip-status
+
+# Pipeline respects locks - build-prep will use locked state:
+./scripts/safe-rp-ctl build-prep  # ✅ Uses locked WIP with fixes
+
+# When ready for next iteration:
+./scripts/safe-rp-ctl unlock-wip  # Allows modifications again
+```
+
+**Lock Benefits:**
+- ✅ **Protects manual fixes** from being overwritten
+- ✅ **Tracks what changed** and why (with timestamps) 
+- ✅ **Allows pipeline to continue** using working state
+- ✅ **Prevents accidental loss** of integration work
+
+### 6 · Validation and Safety Checks
+
+The pipeline now includes comprehensive validation:
+
+- ✅ **build-prep validates WIP** - Certificates, configs, syntax
+- ✅ **build-ship validates prep** - Complete runtime verification  
+- ✅ **Fast failure** - Stops immediately when components missing
+- ✅ **Clear error messages** - Points to exact upstream issues
+- ❌ **No more broken IONOS deployments** - Validation prevents bad packages
+
+### 7 · Checklist before hitting "deploy-prod"
 
 - `list-releases` on stage/pre-prod shows new release and health check is green.
 - `describe-release <dir>` confirms only intended apps changed.
 - Metrics / dashboards still clean after stage traffic replay.
 - Take note of rollback target shown by `list-releases` (one line copy-paste).
+- ✅ **Ship package passed all validations** (certificates, syntax, completeness)
 
 If all green → `deploy-prod`, otherwise `rollback` takes one command.

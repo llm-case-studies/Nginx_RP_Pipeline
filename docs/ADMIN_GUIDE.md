@@ -10,22 +10,50 @@ This guide provides instructions for the administrator responsible for operating
 
 ## 2. Core Workflows
 
-### 2.1. Deploying or Updating an Application
+### 2.1. Safe Pipeline Workflow with Validation
 
-This is the most common workflow.
+The enhanced pipeline provides validation at every stage to prevent broken deployments.
 
-1.  **Receive Artifact:** Obtain the Application Artifact Bundle (`.zip` file) from the application development team.
-2.  **Place Artifact:** Place the bundle in the designated `intake/` directory within this project.
-3.  **Update Manifest:** Add or update the application's entry in the `sites-manifest.json` file. Ensure the `name` property matches the artifact's base name.
-4.  **Deploy:** Run the deployment command:
+#### Standard Deployment Flow
+1.  **Fetch Production State:**
     ```bash
-    ./proxy-container.sh deploy
+    ./scripts/safe-rp-ctl fetch-seed
     ```
-    The script will automatically find the correct artifact, validate the configuration, deploy it, and run health checks.
-5.  **Test:** After deployment, run the full test suite to ensure all sites are healthy:
+    Creates exact production replica in `workspace/seed/` with all certificates.
+
+2.  **Create Integration Workspace:**
     ```bash
-    ./proxy-container.sh test
+    ./scripts/safe-rp-ctl init-wip
     ```
+    Copies seed to `workspace/wip/` for safe integration.
+
+3.  **Add New Applications:**
+    - Place `.zip` bundles in `intake/` directory
+    - Add certificates to project `certs/` directory
+    - Run integration build (future enhancement)
+
+4.  **Handle Integration Issues (if needed):**
+    - Manually edit files in `workspace/wip/`
+    - Test with `./scripts/safe-rp-ctl start-wip`
+    - **Lock workspace when working:**
+      ```bash
+      ./scripts/safe-rp-ctl lock-wip "Fixed port conflicts + routing"
+      ```
+
+5.  **Build Clean Runtime:**
+    ```bash
+    ./scripts/safe-rp-ctl build-prep
+    ```
+    ✅ **Validates WIP completeness** - certificates, configs, nginx syntax
+
+6.  **Build Deployment Package:**
+    ```bash
+    ./scripts/safe-rp-ctl build-ship
+    ```
+    ✅ **Validates prep runtime** - creates zero-entropy deployment package
+
+7.  **Deploy to Environments:**
+    Copy ship package to target environment and run deployment scripts.
 
 ### 2.2. Rolling Back a Failed Deployment
 
@@ -39,10 +67,33 @@ If a deployment introduces issues, you can immediately roll back to the last kno
 
 ## 3. Command Reference
 
--   `./proxy-container.sh build`: Builds the custom Nginx Docker image.
--   `./proxy-container.sh deploy`: Deploys all applications listed in the manifest.
--   `./proxy-container.sh test`: Runs health checks against all sites in the manifest.
--   `./proxy-container.sh rollback`: Restores the previous known-good configuration.
--   `./proxy-container.sh logs`: Tails the logs of the running Nginx container.
--   `./proxy-container.sh status`: Shows the status of the Nginx container.
--   `./proxy-container.sh shell`: Opens a shell inside the running Nginx container for debugging.
+### Core Pipeline Commands
+- `./scripts/safe-rp-ctl fetch-seed` - Fetch production snapshot to workspace/seed
+- `./scripts/safe-rp-ctl init-wip` - Initialize work-in-progress from seed
+- `./scripts/safe-rp-ctl build-prep` - Build clean runtime (with validation)
+- `./scripts/safe-rp-ctl build-ship` - Build deployment package (with validation)
+
+### Environment Management  
+- `./scripts/safe-rp-ctl start-seed` - Start production replica (port 8080)
+- `./scripts/safe-rp-ctl start-wip` - Start development workspace (port 8081)
+- `./scripts/safe-rp-ctl start-prep` - Start clean build (port 8082)
+- `./scripts/safe-rp-ctl start-ship` - Start final verification (port 8083)
+- `./scripts/safe-rp-ctl start-env <env>` - Start any environment (ship/stage/preprod/prod)
+
+### WIP Workspace Management
+- `./scripts/safe-rp-ctl lock-wip "reason"` - Lock WIP workspace to protect manual fixes
+- `./scripts/safe-rp-ctl unlock-wip` - Unlock WIP workspace to allow modifications
+- `./scripts/safe-rp-ctl wip-status` - Show WIP workspace lock status and details
+
+### Utilities
+- `./scripts/safe-rp-ctl stop-all` - Stop all local containers
+- `./scripts/safe-rp-ctl ensure-external` - Start external services
+- `./scripts/safe-rp-ctl list-releases` - Show available releases
+- `./scripts/safe-rp-ctl describe-release <dir>` - Show release details
+
+### Validation Features
+- ✅ **Automatic validation** in build-prep and build-ship
+- ✅ **Certificate verification** at every stage  
+- ✅ **Nginx syntax checking** before deployment
+- ✅ **Completeness checks** prevent broken packages
+- ✅ **Lock protection** preserves manual integration work
