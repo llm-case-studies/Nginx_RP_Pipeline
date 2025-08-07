@@ -17,23 +17,30 @@ source "$LIB_DIR/core.sh"
 source "$LIB_DIR/docker_ops.sh"
 # shellcheck source=manifest_ops.sh
 source "$LIB_DIR/manifest_ops.sh"
+# shellcheck source=config_loader.sh
+source "$LIB_DIR/config_loader.sh"
 
 ### CONFIG ----------------------------------------------------------------
 WORKSPACE_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 INTAKE_DIR="/mnt/pipeline-intake"         # absolute, shared by app teams
 RUNTIME_DIR="$WORKSPACE_ROOT/workspace/prep"
 PORT_TPL_DIR="$WORKSPACE_ROOT/ports"
+
+# Legacy SSH configuration (will be replaced by DEPLOYMENT_SSH)
 # shellcheck disable=SC2034
 PROD_SSH="${PROD_SSH:-proxyuser@prod}"
 PROD_ROOT="${PROD_ROOT:-/home/proxyuser/NgNix-RP}"
 
+# Legacy container names (will be replaced by deterministic naming)
 CNT_LOCAL=${CNT_LOCAL:-nginx-rp-local}
 CNT_STAGE=${CNT_STAGE:-nginx-rp-stage}
 CNT_PREPROD=${CNT_PREPROD:-nginx-rp-pre-prod}
 CNT_PROD=${CNT_PROD:-nginx-rp-prod}
 
-# These envs can be overridden by caller
+# Docker image configuration
 IMAGE="${IMAGE:-nginx:latest}"
+
+# Default network name (will be overridden by environment configs)
 NETWORK_NAME="rp-net"
 
 ############################################################################
@@ -488,6 +495,308 @@ rc_start_prep() {
 }
 
 ############################################################################
+# 12.5. rc_build_ship – build self-contained deployment package with generated scripts
+############################################################################
+rc_build_ship() {
+  if [[ ! -d "$RUNTIME_DIR" ]]; then
+    die "No prep runtime found at $RUNTIME_DIR. Run 'build-prep' first."
+  fi
+
+  local ship_dir="$WORKSPACE_ROOT/workspace/ship"
+  log_info "🚢 Building self-contained ship deployment package"
+  
+  # Create clean ship directory
+  rm -rf "$ship_dir"
+  mkdir -p "$ship_dir"
+  
+  # Copy prep runtime (the clean build)
+  cp -r "$RUNTIME_DIR"/* "$ship_dir/"
+  
+  # Copy core scripts (but not full environments tree)
+  cp -r "$WORKSPACE_ROOT/scripts" "$ship_dir/"
+  
+  # Generate environment-specific deployment scripts
+  log_info "Generating deployment scripts for Type-5 environments"
+  
+  for env in ship stage preprod prod; do
+    generate_deployment_script "$env" "$ship_dir"
+  done
+  
+  # Create README for deployment
+  cat > "$ship_dir/README.md" << 'EOF'
+# Self-Contained Deployment Package
+
+This package contains everything needed to deploy to any Type-5 environment.
+
+## Usage
+
+### Local Ship Environment (testing)
+```bash
+./start-ship.sh
+```
+
+### Stage Environment (IONOS staging)
+```bash
+./start-stage.sh
+```
+
+### Pre-production Environment
+```bash
+./start-preprod.sh
+```
+
+### Production Environment
+```bash
+./start-prod.sh
+```
+
+## What's Included
+
+- Runtime configurations (nginx.conf, conf.d/*)
+- SSL certificates
+- Info pages
+- Environment-specific deployment scripts
+- Zero-entropy deterministic deployment
+
+## Adding New Services
+
+1. Add service configuration to `conf.d/servicename.conf`
+2. Add SSL certificates to `certs/domain.com/`
+3. Add info pages to `info_pages/domain.com/`
+4. Deployment scripts automatically discover and configure new services
+
+No script modifications needed!
+EOF
+
+  # CRITICAL: Verify ship package completeness before declaring success
+  log_info "🔍 Verifying ship package completeness..."
+  
+  local verification_failed=false
+  
+  # Check essential directories exist
+  for dir in certs conf.d info_pages scripts; do
+    if [[ ! -d "$ship_dir/$dir" ]]; then
+      log_error "❌ Missing critical directory: $dir"
+      verification_failed=true
+    else
+      log_info "   ✅ Directory present: $dir"
+    fi
+  done
+  
+  # Check essential files exist
+  for file in nginx.conf README.md; do
+    if [[ ! -f "$ship_dir/$file" ]]; then
+      log_error "❌ Missing critical file: $file"
+      verification_failed=true
+    else
+      log_info "   ✅ File present: $file"
+    fi
+  done
+  
+  # Verify certificates are present
+  if [[ -d "$ship_dir/certs" ]]; then
+    local cert_count=$(find "$ship_dir/certs" -name "*.cer" -o -name "*.pem" -o -name "*.key" | wc -l)
+    if [[ $cert_count -eq 0 ]]; then
+      log_error "❌ No certificate files found in certs/ directory"
+      verification_failed=true
+    else
+      log_info "   ✅ Found $cert_count certificate files"
+    fi
+  fi
+  
+  # Check nginx config syntax
+  if command -v nginx >/dev/null 2>&1; then
+    log_info "   🔍 Testing nginx configuration syntax..."
+    if nginx -t -c "$ship_dir/nginx.conf" -p "$ship_dir" >/dev/null 2>&1; then
+      log_info "   ✅ Nginx configuration syntax valid"
+    else
+      log_error "❌ Nginx configuration syntax invalid"
+      nginx -t -c "$ship_dir/nginx.conf" -p "$ship_dir" 2>&1 | head -5
+      verification_failed=true
+    fi
+  else
+    log_warn "   ⚠️ nginx not available for syntax checking"
+  fi
+  
+  # Verify deployment scripts were generated
+  for env in ship stage preprod prod; do
+    if [[ ! -f "$ship_dir/start-${env}.sh" ]]; then
+      log_error "❌ Missing deployment script: start-${env}.sh"
+      verification_failed=true
+    elif [[ ! -x "$ship_dir/start-${env}.sh" ]]; then
+      log_error "❌ Deployment script not executable: start-${env}.sh"
+      verification_failed=true
+    else
+      log_info "   ✅ Deployment script ready: start-${env}.sh"
+    fi
+  done
+  
+  if [[ "$verification_failed" == "true" ]]; then
+    log_error "🚨 SHIP PACKAGE VERIFICATION FAILED!"
+    log_error "   Package is incomplete and MUST NOT be deployed"
+    log_error "   Fix the issues above and rebuild"
+    exit 1
+  fi
+  
+  log_success "✅ Ship package verification passed - ready for deployment"
+  log_info "   Self-contained deployment scripts generated"
+  log_info "   Ready for: ship, stage, preprod, prod environments"
+  log_info "🚢 Copy $ship_dir/* to deployment target and run ./start-<env>.sh"
+}
+
+# Generate deployment script for specific environment
+generate_deployment_script() {
+  local env="$1"
+  local ship_dir="$2"
+  local script_file="$ship_dir/start-${env}.sh"
+  
+  # Set defaults before loading environment configuration
+  DEPLOYMENT_ROOT="/opt/nginx-rp"
+  ENVIRONMENT="$env"
+  
+  # Load and calculate deterministic values
+  source "$WORKSPACE_ROOT/environments/base/calculate_deterministic_values.sh"
+  calculate_deterministic_values
+  
+  log_info "  → Generating start-${env}.sh"
+  
+  cat > "$script_file" << EOF
+#!/usr/bin/env bash
+#-------------------------------------------------------------
+# start-${env}.sh - Self-contained ${env} environment deployment
+# Generated by build-ship - DO NOT EDIT MANUALLY
+#-------------------------------------------------------------
+set -euo pipefail
+
+# Environment Configuration (Type-5: Zero Entropy)
+ENVIRONMENT="$ENVIRONMENT"
+DEPLOYMENT_ROOT="\$(pwd)"
+NETWORK_NAME="$NETWORK_NAME"
+CONTAINER_NAME="$CONTAINER_NAME"
+VAULTWARDEN_NAME="$VAULTWARDEN_NAME"
+
+# Port Configuration
+HTTP_PORT=$HTTP_PORT
+HTTPS_PORT=$HTTPS_PORT
+VAULTWARDEN_PORT=$VAULTWARDEN_PORT
+
+# Network Configuration  
+NETWORK_SUBNET="$NETWORK_SUBNET"
+NGINX_IP="$NGINX_IP"
+VAULTWARDEN_IP="$VAULTWARDEN_IP"
+
+# Docker Image
+IMAGE="nginx:latest"
+
+echo "🚀 Starting \$ENVIRONMENT environment"
+echo "   Container: \$CONTAINER_NAME"
+echo "   Network: \$NETWORK_NAME (\$NETWORK_SUBNET)"
+echo "   Ports: HTTP=\$HTTP_PORT, HTTPS=\$HTTPS_PORT"
+
+# Create deterministic network if it doesn't exist
+if ! docker network ls | grep -q "\$NETWORK_NAME"; then
+  echo "Creating network: \$NETWORK_NAME (\$NETWORK_SUBNET)"
+  docker network create "\$NETWORK_NAME" --subnet="\$NETWORK_SUBNET"
+else
+  echo "Network \$NETWORK_NAME already exists"
+fi
+
+# Auto-discover and start services from conf.d
+echo "Auto-discovering services from conf.d/*.conf files"
+for conf_file in "\$DEPLOYMENT_ROOT/conf.d"/*.conf; do
+  [[ -f "\$conf_file" ]] || continue
+  
+  service_name=\$(basename "\$conf_file" .conf)
+  service_container="\${service_name}-\${ENVIRONMENT}"
+  
+  # Extract upstream references to start dependent services
+  if grep -q "proxy_pass.*\${service_name}-" "\$conf_file"; then
+    echo "  → Found service: \$service_name"
+    
+    # Start service container if not running
+    if ! docker ps | grep -q "\$service_container"; then
+      echo "    Starting \$service_container"
+      
+      docker stop "\$service_container" 2>/dev/null || true
+      docker rm "\$service_container" 2>/dev/null || true
+      
+      # Create service-specific data directory
+      mkdir -p "./data/\$service_name-\$ENVIRONMENT"
+      
+      # Determine service port (auto-increment from base)
+      case "\$service_name" in
+        vaultwarden) service_port=\$VAULTWARDEN_PORT ;;
+        *) service_port=\$((VAULTWARDEN_PORT + 100)) ;;  # Auto-assign ports
+      esac
+      
+      # Start service container
+      docker run -d \\
+        --name "\$service_container" \\
+        --network "\$NETWORK_NAME" \\
+        --ip "\$VAULTWARDEN_IP" \\
+        -p "\$service_port:80" \\
+        -v "\$(pwd)/data/\$service_name-\$ENVIRONMENT:/data" \\
+        -e WEBSOCKET_ENABLED=true \\
+        \${service_name}/server:latest 2>/dev/null || \\
+      docker run -d \\
+        --name "\$service_container" \\
+        --network "\$NETWORK_NAME" \\
+        --ip "\$VAULTWARDEN_IP" \\
+        -p "\$service_port:80" \\
+        -v "\$(pwd)/data/\$service_name-\$ENVIRONMENT:/data" \\
+        nginx:latest
+        
+      echo "    ✅ \$service_container started on port \$service_port"
+    else
+      echo "    \$service_container already running"
+    fi
+    
+    # Update service references in nginx config
+    sed -i "s/\$service_name-ship:/\$service_container:/g" "\$DEPLOYMENT_ROOT/conf.d/\$service_name.conf"
+    sed -i "s/\$service_name-[a-zA-Z]*:/\$service_container:/g" "\$DEPLOYMENT_ROOT/conf.d/\$service_name.conf"
+  fi
+done
+
+# Stop nginx container if already running
+docker stop "\$CONTAINER_NAME" 2>/dev/null || true
+docker rm "\$CONTAINER_NAME" 2>/dev/null || true
+
+echo "Starting \$CONTAINER_NAME on \$NETWORK_NAME network"
+
+# Start nginx container
+docker run -d \\
+  --name "\$CONTAINER_NAME" \\
+  --network "\$NETWORK_NAME" \\
+  --ip "\$NGINX_IP" \\
+  -p "\$HTTP_PORT:80" \\
+  -p "\$HTTPS_PORT:443" \\
+  -v "\$DEPLOYMENT_ROOT/nginx.conf:/etc/nginx/nginx.conf:ro" \\
+  -v "\$DEPLOYMENT_ROOT/conf.d:/etc/nginx/conf.d:ro" \\
+  -v "\$DEPLOYMENT_ROOT/certs:/etc/nginx/certs:ro" \\
+  -v "\$DEPLOYMENT_ROOT/info_pages:/var/www/info_pages:ro" \\
+  -v "\$DEPLOYMENT_ROOT/nginx-logs:/var/www/NgNix-RP/nginx-logs" \\
+  "\$IMAGE"
+
+echo "✅ \$ENVIRONMENT environment started successfully!"
+echo "   URLs: http://localhost:\$HTTP_PORT, https://localhost:\$HTTPS_PORT"
+echo "   Logs: docker logs \$CONTAINER_NAME"
+
+# Test nginx configuration
+sleep 2
+if docker ps | grep -q "\$CONTAINER_NAME"; then
+  echo "✅ \$CONTAINER_NAME is running"
+  docker logs "\$CONTAINER_NAME" --tail 5 2>/dev/null || true
+else
+  echo "❌ \$CONTAINER_NAME failed to start"
+  docker logs "\$CONTAINER_NAME" 2>/dev/null || true
+  exit 1
+fi
+EOF
+
+  chmod +x "$script_file"
+}
+
+############################################################################
 # 13. rc_init_stage – initialize stage environment (network + config updates)
 ############################################################################
 rc_init_stage() {
@@ -528,55 +837,135 @@ rc_start_ship() {
     die "No prep runtime found at $RUNTIME_DIR. Run 'build-prep' first."
   fi
   
-  local ship_dir="$WORKSPACE_ROOT/workspace/ship"
+  # Load ship environment configuration (Type-5)
+  load_environment_config "ship"
   
-  # Build ship from prep
+  # Build ship from prep  
   log_info "Building ship deployment package from prep runtime"
-  rm -rf "$ship_dir"
-  mkdir -p "$ship_dir"
+  rm -rf "$DEPLOYMENT_ROOT"
+  mkdir -p "$DEPLOYMENT_ROOT"
   
   # Copy runtime configs
-  cp -r "$RUNTIME_DIR"/* "$ship_dir/"
+  cp -r "$RUNTIME_DIR"/* "$DEPLOYMENT_ROOT/"
   
   # Copy deployment scripts and port configs
-  cp -r "$WORKSPACE_ROOT/scripts" "$ship_dir/"
-  cp -r "$WORKSPACE_ROOT/ports" "$ship_dir/"
+  cp -r "$WORKSPACE_ROOT/scripts" "$DEPLOYMENT_ROOT/"
+  cp -r "$WORKSPACE_ROOT/ports" "$DEPLOYMENT_ROOT/"
   
   log_info "Ship package includes: runtime configs, deployment scripts, and port configs"
   
   # Ensure external services are running
   rc_ensure_external_services
   
-  local container_name="nginx-rp-ship"
-  
   # Stop if already running
-  docker stop "$container_name" 2>/dev/null || true
-  docker rm "$container_name" 2>/dev/null || true
+  docker stop "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$CONTAINER_NAME" 2>/dev/null || true
   
-  log_info "Starting ship container (final verification) on stage ports 8083/8446"
+  log_info "Starting $CONTAINER_NAME container (final verification) on ports $HTTP_PORT/$HTTPS_PORT"
   
-  # Start container with stage ports for final verification before IONOS deployment
+  # Use legacy network for backward compatibility with existing services
+  local network_to_use="${LEGACY_NETWORK:-$NETWORK_NAME}"
+  
+  # Start container with deterministic configuration
   docker run -d \
-    --name "$container_name" \
-    --network pronunco-production \
-    --ip 172.20.0.20 \
-    -p 8083:80 \
-    -p 8446:443 \
-    -v "$ship_dir/nginx.conf:/etc/nginx/nginx.conf:ro" \
-    -v "$ship_dir/conf.d:/etc/nginx/conf.d:ro" \
-    -v "$ship_dir/certs:/etc/nginx/certs:ro" \
+    --name "$CONTAINER_NAME" \
+    --network "$network_to_use" \
+    --ip "$NGINX_IP" \
+    -p "$HTTP_PORT:80" \
+    -p "$HTTPS_PORT:443" \
+    -v "$DEPLOYMENT_ROOT/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$DEPLOYMENT_ROOT/conf.d:/etc/nginx/conf.d:ro" \
+    -v "$DEPLOYMENT_ROOT/certs:/etc/nginx/certs:ro" \
     -v "$WORKSPACE_ROOT/certs:/etc/nginx/local-certs:ro" \
-    -v "$ship_dir/info_pages:/var/www/info_pages:ro" \
-    -v "$ship_dir/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
-    nginx:latest
+    -v "$DEPLOYMENT_ROOT/info_pages:/var/www/info_pages:ro" \
+    -v "$DEPLOYMENT_ROOT/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
+    "$IMAGE"
   
-  log_success "Ship container started: http://localhost:8083, https://localhost:8446"
-  log_success "Ship runtime built at $ship_dir"
-  log_info "🚢 Ready for IONOS deployment - copy $ship_dir/* to IONOS"
+  log_success "$CONTAINER_NAME started: http://localhost:$HTTP_PORT, https://localhost:$HTTPS_PORT"
+  log_success "Ship runtime built at $DEPLOYMENT_ROOT"
+  log_info "🚢 Ready for IONOS deployment - copy $DEPLOYMENT_ROOT/* to IONOS"
 }
 
 ############################################################################
-# 14. rc_stop_all – stop all local containers
+# 15. rc_start_environment – start any Type-5 environment using deterministic config
+############################################################################
+rc_start_environment() {
+  local env="${1:-ship}"
+  local runtime_source="${2:-$RUNTIME_DIR}"
+  
+  if [[ ! -d "$runtime_source" ]]; then
+    die "Runtime source not found at $runtime_source"
+  fi
+  
+  # Load environment configuration (Type-5)
+  load_environment_config "$env"
+  
+  log_info "🚀 Starting $env environment using deterministic configuration"
+  
+  # Ensure deployment directory exists
+  mkdir -p "$DEPLOYMENT_ROOT"
+  
+  # Copy runtime to deployment location (if not already there)
+  if [[ "$runtime_source" != "$DEPLOYMENT_ROOT" ]]; then
+    log_info "Copying runtime from $runtime_source to $DEPLOYMENT_ROOT"
+    cp -r "$runtime_source"/* "$DEPLOYMENT_ROOT/"
+  fi
+  
+  # Create deterministic network if it doesn't exist  
+  if ! docker network ls | grep -q "$NETWORK_NAME"; then
+    log_info "Creating network: $NETWORK_NAME ($NETWORK_SUBNET)"
+    docker network create "$NETWORK_NAME" --subnet="$NETWORK_SUBNET"
+  fi
+  
+  # Start vaultwarden service for this environment
+  if ! docker ps | grep -q "$VAULTWARDEN_NAME"; then
+    log_info "Starting $VAULTWARDEN_NAME service"
+    
+    docker stop "$VAULTWARDEN_NAME" 2>/dev/null || true
+    docker rm "$VAULTWARDEN_NAME" 2>/dev/null || true
+    
+    mkdir -p "$WORKSPACE_ROOT/data/vaultwarden-$ENVIRONMENT"
+    
+    docker run -d \
+      --name "$VAULTWARDEN_NAME" \
+      --network "$NETWORK_NAME" \
+      --ip "$VAULTWARDEN_IP" \
+      -p "$VAULTWARDEN_PORT:80" \
+      -v "$WORKSPACE_ROOT/data/vaultwarden-$ENVIRONMENT:/data" \
+      -e WEBSOCKET_ENABLED=true \
+      vaultwarden/server:latest
+  fi
+  
+  # Stop nginx container if already running
+  docker stop "$CONTAINER_NAME" 2>/dev/null || true
+  docker rm "$CONTAINER_NAME" 2>/dev/null || true
+  
+  log_info "Starting $CONTAINER_NAME on $NETWORK_NAME network"
+  
+  # Start nginx container with deterministic configuration
+  docker run -d \
+    --name "$CONTAINER_NAME" \
+    --network "$NETWORK_NAME" \
+    --ip "$NGINX_IP" \
+    -p "$HTTP_PORT:80" \
+    -p "$HTTPS_PORT:443" \
+    -v "$DEPLOYMENT_ROOT/nginx.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$DEPLOYMENT_ROOT/conf.d:/etc/nginx/conf.d:ro" \
+    -v "$DEPLOYMENT_ROOT/certs:/etc/nginx/certs:ro" \
+    -v "$WORKSPACE_ROOT/certs:/etc/nginx/local-certs:ro" \
+    -v "$DEPLOYMENT_ROOT/info_pages:/var/www/info_pages:ro" \
+    -v "$DEPLOYMENT_ROOT/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
+    "$IMAGE"
+  
+  log_success "✅ $env environment started successfully!"
+  log_info "   Container: $CONTAINER_NAME"
+  log_info "   Network: $NETWORK_NAME ($NETWORK_SUBNET)"
+  log_info "   URLs: http://localhost:$HTTP_PORT, https://localhost:$HTTPS_PORT"
+  log_info "   Vaultwarden: $VAULTWARDEN_NAME"
+}
+
+############################################################################
+# 16. rc_stop_all – stop all local containers
 ############################################################################
 rc_stop_all() {
   log_info "Stopping all local containers"

@@ -57,6 +57,9 @@ case "$cmd" in
   build-prep)
     rc_build_prep "$@"
     ;;
+  build-ship)
+    rc_build_ship "$@"
+    ;;
   start-seed)
     rc_start_seed "$@"
     ;;
@@ -78,8 +81,62 @@ case "$cmd" in
   ensure-external)
     rc_ensure_external_services "$@"
     ;;
+  start-env)
+    # New deterministic environment starter
+    # Usage: safe-rp-ctl start-env <environment> [runtime-source]
+    # Examples: 
+    #   safe-rp-ctl start-env ship
+    #   safe-rp-ctl start-env stage /path/to/runtime
+    if [[ $# -lt 1 ]] || [[ "$1" =~ ^-+h(elp)?$ ]]; then
+      log_info "Usage: start-env <environment> [runtime-source]"
+      echo
+      log_info "Available environments:"
+      log_info "  ship    - Local final verification (ports 8083/8446)"
+      log_info "  stage   - IONOS staging deployment (ports 80/443)"
+      log_info "  preprod - Pre-production verification (ports 80/443)"
+      log_info "  prod    - Production deployment (ports 80/443)"
+      echo
+      log_info "Examples:"
+      log_info "  safe-rp-ctl start-env ship              # Use prep runtime"
+      log_info "  safe-rp-ctl start-env stage /path/runtime  # Use custom runtime"
+      exit 1
+    fi
+    rc_start_environment "$@"
+    ;;
+  lock-wip)
+    rc_lock_wip "$@"
+    ;;
+  unlock-wip)
+    rc_unlock_wip "$@"
+    ;;
+  wip-status)
+    rc_wip_status "$@"
+    ;;
   *)
     log_error "Unknown command: $cmd"
+    echo
+    log_info "Available commands:"
+    log_info "  Legacy pipeline:"
+    log_info "    fetch-seed      - Fetch production snapshot"
+    log_info "    init-wip        - Initialize work-in-progress"
+    log_info "    build-prep      - Build clean runtime"
+    log_info "    build-ship      - Build self-contained deployment package"
+    log_info "    start-seed      - Start production replica (port 8080)"
+    log_info "    start-wip       - Start development workspace (port 8081)"
+    log_info "    start-prep      - Start clean build (port 8082)"
+    log_info "    start-ship      - Start final verification (port 8083)"
+    echo
+    log_info "  Deterministic environments (Type-5):"
+    log_info "    start-env <env> - Start any environment (ship/stage/preprod/prod)"
+    echo
+    log_info "  WIP Management:"
+    log_info "    lock-wip        - Lock WIP workspace to protect manual fixes"
+    log_info "    unlock-wip      - Unlock WIP workspace to allow modifications" 
+    log_info "    wip-status      - Show WIP workspace lock status and details"
+    echo
+    log_info "  Utilities:"
+    log_info "    stop-all        - Stop all local containers"
+    log_info "    ensure-external - Start external services"
     exit 1
     ;;
 esac
