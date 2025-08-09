@@ -1,0 +1,21 @@
+{
+  "name": "nginx-rp-pipeline-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:config && npm run test:unit && npm run test:integration",
+    "test:config": "bats tests/unit/config_validation.bats",
+    "test:unit": "bats tests/unit/config_loader.bats tests/unit/cli_surface.bats tests/unit/deterministic_values.bats",
+    "test:integration": "bats tests/integration/pipeline_flow.bats",
+    "test:e2e": "playwright test",
+    "test:e2e:ship": "BASE_HTTP=8083 BASE_HTTPS=8446 playwright test -c playwright.config.ts",
+    "test:e2e:stage": "BASE_URL=https://stage.example.com playwright test -c playwright.config.ts",
+    "test:e2e:preprod": "BASE_URL=https://preprod.example.com playwright test -c playwright.config.ts",
+    "test:e2e:prod": "BASE_URL=https://example.com playwright test -c playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.46.0"
+  }
+}
+

@@ -32,4 +32,4 @@ runtime/
 .DS_Store
 
 # Log files
-*.log
+*.lognode_modules/
