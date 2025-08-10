@@ -32,4 +32,18 @@ runtime/
 .DS_Store
 
 # Log files
-*.lognode_modules/
+*.log# Dependencies
+node_modules/
+
+# Test results and runtime artifacts
+test-results/
+workspace/*/nginx-logs/
+workspace/*/nginx.conf.broken
+workspace/*/nginx.orig.conf
+
+# npm
+.npm
+*.log
+
+# MCP/Serena cache and runtime directories
+.serena/
