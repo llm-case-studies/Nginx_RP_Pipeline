@@ -626,8 +626,8 @@ Notes for handoff:
   - Generated `start-*.sh` under `workspace/ship/` contain escaped variables (e.g., `"\$NETWORK_NAME"`, `"\$CONTAINER_NAME"`). At runtime this prevents expansion and passes literal `$VARS` to docker/grep. Root cause: over-escaping in `scripts/lib/deployment_generation.sh` (single-quoted heredocs plus extra backslashes). Fix: remove the backslashes inside single-quoted heredocs so `$VAR` is written literally to file (not expanded during generation, but will expand at runtime). Alternatively, inline computed constants directly to avoid runtime variables.
 
 - Consistency to align:
-  - Stage ports: `environments/base/calculate_deterministic_values.sh` defines stage as 8080/8443, but `workspace/ship/start-stage.sh` shows 8088/8447. Align generator to deterministic values.
-  - Vaultwarden ports: deterministic values set env-specific `VAULTWARDEN_PORT` (e.g., 8224 for stage), but start scripts show different numbers (e.g., 8088). Unify via `calculate_deterministic_values`.
+  - Stage ports: aligned to 8080/8443 (now consistent between generator and `start-stage.sh`).
+  - Vaultwarden ports: aligned to 8224 for stage via `calculate_deterministic_values.sh`.
   - Local env configs: `environment_ops.sh` calls `load_environment_config seed|wip|prep`, but there are no `environments/instances/{seed,wip,prep}`. The loader falls back to defaults, which likely diverge from documented local ports (8080/8443, 8081/8444, 8082/8445). Add instance configs for these three to make behavior explicit and deterministic.
 
 - Promotion mechanics (agrees with hybrid consensus):
