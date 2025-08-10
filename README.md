@@ -27,6 +27,7 @@ The pipeline follows a **seed→wip→prep→ship** flow:
 - **[Requirements](./docs/REQUIREMENTS.md):** The technical requirements for running the pipeline.
 - **[User Guide](./docs/USER_GUIDE.md):** Instructions for application developers who need to host their apps behind the proxy.
 - **[Admin Guide](./docs/ADMIN_GUIDE.md):** Instructions for the administrator who operates the pipeline.
+- **[Remote Deployment Discussion](./docs/REMOTE_DEPLOYMENT_ARCHITECTURE_DISCUSSION.md):** Analysis of deployment architecture options for remote environments.
 
 ## Getting Started
 
