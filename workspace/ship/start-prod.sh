@@ -15,7 +15,7 @@ VAULTWARDEN_NAME="vaultwarden-prod"
 # Port Configuration
 HTTP_PORT=80
 HTTPS_PORT=443
-VAULTWARDEN_PORT=8226
+VAULTWARDEN_PORT=8090
 
 # Network Configuration  
 NETWORK_SUBNET="172.23.0.0/16"
@@ -58,7 +58,7 @@ for conf_file in "$DEPLOYMENT_ROOT/conf.d"/*.conf; do
       docker rm "$service_container" 2>/dev/null || true
       
       # Create service-specific data directory
-      mkdir -p "./data/$service_name-$ENVIRONMENT"
+      mkdir -p "$DEPLOYMENT_ROOT/data/$service_name-$ENVIRONMENT"
       
       # Determine service port (auto-increment from base)
       case "$service_name" in
@@ -72,7 +72,7 @@ for conf_file in "$DEPLOYMENT_ROOT/conf.d"/*.conf; do
         --network "$NETWORK_NAME" \
         --ip "$VAULTWARDEN_IP" \
         -p "$service_port:80" \
-        -v "$(pwd)/data/$service_name-$ENVIRONMENT:/data" \
+        -v "$DEPLOYMENT_ROOT/data/$service_name-$ENVIRONMENT:/data" \
         -e WEBSOCKET_ENABLED=true \
         ${service_name}/server:latest 2>/dev/null || \
       docker run -d \
@@ -80,7 +80,7 @@ for conf_file in "$DEPLOYMENT_ROOT/conf.d"/*.conf; do
         --network "$NETWORK_NAME" \
         --ip "$VAULTWARDEN_IP" \
         -p "$service_port:80" \
-        -v "$(pwd)/data/$service_name-$ENVIRONMENT:/data" \
+        -v "$DEPLOYMENT_ROOT/data/$service_name-$ENVIRONMENT:/data" \
         nginx:latest
         
       echo "    ✅ $service_container started on port $service_port"
