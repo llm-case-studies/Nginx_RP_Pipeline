@@ -53,11 +53,11 @@ generate_network_setup() {
   cat << 'EOF'
 
 # Create deterministic network if it doesn't exist
-if ! docker network ls | grep -q "\$NETWORK_NAME"; then
-  echo "Creating network: \$NETWORK_NAME (\$NETWORK_SUBNET)"
-  docker network create "\$NETWORK_NAME" --subnet="\$NETWORK_SUBNET"
+if ! docker network ls | grep -q "$NETWORK_NAME"; then
+  echo "Creating network: $NETWORK_NAME ($NETWORK_SUBNET)"
+  docker network create "$NETWORK_NAME" --subnet="$NETWORK_SUBNET"
 else
-  echo "Network \$NETWORK_NAME already exists"
+  echo "Network $NETWORK_NAME already exists"
 fi
 EOF
 }
@@ -68,57 +68,57 @@ generate_service_discovery() {
 
 # Auto-discover and start services from conf.d
 echo "Auto-discovering services from conf.d/*.conf files"
-for conf_file in "\$DEPLOYMENT_ROOT/conf.d"/*.conf; do
-  [[ -f "\$conf_file" ]] || continue
+for conf_file in "$DEPLOYMENT_ROOT/conf.d"/*.conf; do
+  [[ -f "$conf_file" ]] || continue
   
-  service_name=$(basename "\$conf_file" .conf)
-  service_container="\${service_name}-\${ENVIRONMENT}"
+  service_name=$(basename "$conf_file" .conf)
+  service_container="${service_name}-${ENVIRONMENT}"
   
   # Extract upstream references to start dependent services
-  if grep -q "proxy_pass.*\${service_name}-" "\$conf_file"; then
-    echo "  → Found service: \$service_name"
+  if grep -q "proxy_pass.*${service_name}-" "$conf_file"; then
+    echo "  → Found service: $service_name"
     
     # Start service container if not running
-    if ! docker ps | grep -q "\$service_container"; then
-      echo "    Starting \$service_container"
+    if ! docker ps | grep -q "$service_container"; then
+      echo "    Starting $service_container"
       
-      docker stop "\$service_container" 2>/dev/null || true
-      docker rm "\$service_container" 2>/dev/null || true
+      docker stop "$service_container" 2>/dev/null || true
+      docker rm "$service_container" 2>/dev/null || true
       
       # Create service-specific data directory
-      mkdir -p "\$DEPLOYMENT_ROOT/data/\$service_name-\$ENVIRONMENT"
+      mkdir -p "$DEPLOYMENT_ROOT/data/$service_name-$ENVIRONMENT"
       
       # Determine service port (auto-increment from base)
-      case "\$service_name" in
-        vaultwarden) service_port=\$VAULTWARDEN_PORT ;;
-        *) service_port=\$((VAULTWARDEN_PORT + 100)) ;;  # Auto-assign ports
+      case "$service_name" in
+        vaultwarden) service_port=$VAULTWARDEN_PORT ;;
+        *) service_port=$((VAULTWARDEN_PORT + 100)) ;;  # Auto-assign ports
       esac
       
       # Start service container
       docker run -d \
-        --name "\$service_container" \
-        --network "\$NETWORK_NAME" \
-        --ip "\$VAULTWARDEN_IP" \
-        -p "\$service_port:80" \
-        -v "\$DEPLOYMENT_ROOT/data/\$service_name-\$ENVIRONMENT:/data" \
+        --name "$service_container" \
+        --network "$NETWORK_NAME" \
+        --ip "$VAULTWARDEN_IP" \
+        -p "$service_port:80" \
+        -v "$DEPLOYMENT_ROOT/data/$service_name-$ENVIRONMENT:/data" \
         -e WEBSOCKET_ENABLED=true \
-        \${service_name}/server:latest 2>/dev/null || \
+        ${service_name}/server:latest 2>/dev/null || \
       docker run -d \
-        --name "\$service_container" \
-        --network "\$NETWORK_NAME" \
-        --ip "\$VAULTWARDEN_IP" \
-        -p "\$service_port:80" \
-        -v "\$DEPLOYMENT_ROOT/data/\$service_name-\$ENVIRONMENT:/data" \
+        --name "$service_container" \
+        --network "$NETWORK_NAME" \
+        --ip "$VAULTWARDEN_IP" \
+        -p "$service_port:80" \
+        -v "$DEPLOYMENT_ROOT/data/$service_name-$ENVIRONMENT:/data" \
         nginx:latest
         
-      echo "    ✅ \$service_container started on port \$service_port"
+      echo "    ✅ $service_container started on port $service_port"
     else
-      echo "    \$service_container already running"
+      echo "    $service_container already running"
     fi
     
     # Update service references in nginx config
-    sed -i "s/\$service_name-ship:/\$service_container:/g" "\$DEPLOYMENT_ROOT/conf.d/\$service_name.conf"
-    sed -i "s/\$service_name-[a-zA-Z]*:/\$service_container:/g" "\$DEPLOYMENT_ROOT/conf.d/\$service_name.conf"
+    sed -i "s/$service_name-ship:/$service_container:/g" "$DEPLOYMENT_ROOT/conf.d/$service_name.conf"
+    sed -i "s/$service_name-[a-zA-Z]*:/$service_container:/g" "$DEPLOYMENT_ROOT/conf.d/$service_name.conf"
   fi
 done
 EOF
@@ -129,28 +129,28 @@ generate_nginx_startup() {
   cat << 'EOF'
 
 # Stop nginx container if already running
-docker stop "\$CONTAINER_NAME" 2>/dev/null || true
-docker rm "\$CONTAINER_NAME" 2>/dev/null || true
+docker stop "$CONTAINER_NAME" 2>/dev/null || true
+docker rm "$CONTAINER_NAME" 2>/dev/null || true
 
-echo "Starting \$CONTAINER_NAME on \$NETWORK_NAME network"
+echo "Starting $CONTAINER_NAME on $NETWORK_NAME network"
 
 # Start nginx container
 docker run -d \
-  --name "\$CONTAINER_NAME" \
-  --network "\$NETWORK_NAME" \
-  --ip "\$NGINX_IP" \
-  -p "\$HTTP_PORT:80" \
-  -p "\$HTTPS_PORT:443" \
-  -v "\$DEPLOYMENT_ROOT/nginx.conf:/etc/nginx/nginx.conf:ro" \
-  -v "\$DEPLOYMENT_ROOT/conf.d:/etc/nginx/conf.d:ro" \
-  -v "\$DEPLOYMENT_ROOT/certs:/etc/nginx/certs:ro" \
-  -v "\$DEPLOYMENT_ROOT/info_pages:/var/www/info_pages:ro" \
-  -v "\$DEPLOYMENT_ROOT/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
-  "\$IMAGE"
+  --name "$CONTAINER_NAME" \
+  --network "$NETWORK_NAME" \
+  --ip "$NGINX_IP" \
+  -p "$HTTP_PORT:80" \
+  -p "$HTTPS_PORT:443" \
+  -v "$DEPLOYMENT_ROOT/nginx.conf:/etc/nginx/nginx.conf:ro" \
+  -v "$DEPLOYMENT_ROOT/conf.d:/etc/nginx/conf.d:ro" \
+  -v "$DEPLOYMENT_ROOT/certs:/etc/nginx/certs:ro" \
+  -v "$DEPLOYMENT_ROOT/info_pages:/var/www/info_pages:ro" \
+  -v "$DEPLOYMENT_ROOT/nginx-logs:/var/www/NgNix-RP/nginx-logs" \
+  "$IMAGE"
 
-echo "✅ \$ENVIRONMENT environment started successfully!"
-echo "   URLs: http://localhost:\$HTTP_PORT, https://localhost:\$HTTPS_PORT"
-echo "   Logs: docker logs \$CONTAINER_NAME"
+echo "✅ $ENVIRONMENT environment started successfully!"
+echo "   URLs: http://localhost:$HTTP_PORT, https://localhost:$HTTPS_PORT"
+echo "   Logs: docker logs $CONTAINER_NAME"
 EOF
 }
 
@@ -160,12 +160,12 @@ generate_health_check() {
 
 # Test nginx configuration
 sleep 2
-if docker ps | grep -q "\$CONTAINER_NAME"; then
-  echo "✅ \$CONTAINER_NAME is running"
-  docker logs "\$CONTAINER_NAME" --tail 5 2>/dev/null || true
+if docker ps | grep -q "$CONTAINER_NAME"; then
+  echo "✅ $CONTAINER_NAME is running"
+  docker logs "$CONTAINER_NAME" --tail 5 2>/dev/null || true
 else
-  echo "❌ \$CONTAINER_NAME failed to start"
-  docker logs "\$CONTAINER_NAME" 2>/dev/null || true
+  echo "❌ $CONTAINER_NAME failed to start"
+  docker logs "$CONTAINER_NAME" 2>/dev/null || true
   exit 1
 fi
 EOF

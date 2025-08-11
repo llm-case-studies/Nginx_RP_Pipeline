@@ -2,8 +2,8 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SAFE_RP_CTL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SAFE_RP_CTL_DIR/.." && pwd)"
 export ROOT_DIR
 
 # Load deployment configuration if present
@@ -13,15 +13,15 @@ if [[ -f "$ROOT_DIR/deploy.conf" ]]; then
 fi
 
 # shellcheck source=lib/core.sh
-source "$SCRIPT_DIR/lib/core.sh"
+source "$SAFE_RP_CTL_DIR/lib/core.sh"
 # shellcheck source=lib/docker_ops.sh
-source "$SCRIPT_DIR/lib/docker_ops.sh"
+source "$SAFE_RP_CTL_DIR/lib/docker_ops.sh"
 # shellcheck source=lib/release_ops.sh
-source "$SCRIPT_DIR/lib/release_ops.sh"
+source "$SAFE_RP_CTL_DIR/lib/release_ops.sh"
 # shellcheck source=lib/manifest_ops.sh
-source "$SCRIPT_DIR/lib/manifest_ops.sh"
+source "$SAFE_RP_CTL_DIR/lib/manifest_ops.sh"
 # shellcheck source=lib/ssh_ops.sh
-source "$SCRIPT_DIR/lib/ssh_ops.sh"
+source "$SAFE_RP_CTL_DIR/lib/ssh_ops.sh"
 
 cmd="${1:-}"
 shift || true
