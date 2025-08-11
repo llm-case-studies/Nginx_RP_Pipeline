@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 @test "calculate_deterministic_values for stage/preprod/prod" {
-  run bash -lc '
+  run bash -c '
     set -eo pipefail
     cd "$BATS_TEST_DIRNAME/../.."
     source environments/base/calculate_deterministic_values.sh
@@ -14,7 +14,7 @@
   [ "$status" -eq 0 ]
   IFS=$'\n' read -r l1 l2 l3 <<< "$output"
   [ "$l1" = "nginx-rp-network-stage|8080|8443" ]
-  [ "$l2" = "nginx-rp-network-preprod|8081|8444" ]
+  [ "$l2" = "nginx-rp-network-preprod|8089|8448" ]
   [ "$l3" = "nginx-rp-network-prod|80|443" ]
 }
 

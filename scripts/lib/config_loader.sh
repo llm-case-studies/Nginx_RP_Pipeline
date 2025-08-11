@@ -73,10 +73,10 @@ get_legacy_container_name() {
 get_legacy_network_name() {
   local env="$1"
   case "$env" in
-    ship)     echo "pronunco-production" ;;  # Ship connects to existing services
+    ship)     echo "nginx-rp-network-ship" ;;   # Now uses deterministic naming
     stage)    echo "nginx-rp-network-stage" ;;
     preprod)  echo "nginx-rp-network-preprod" ;;
-    prod)     echo "pronunco-production" ;;  # Production uses legacy name
+    prod)     echo "nginx-rp-network-prod" ;;   # Now uses deterministic naming
     *)        echo "nginx-rp-network-${env}" ;;
   esac
 }
