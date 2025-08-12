@@ -141,6 +141,52 @@ sudo chown deploy:deploy /opt/pronunco-api
 
 echo -e "${GREEN}✅ Deployment paths configured${NC}"
 
+# Set up SSH access for pipeline users
+echo -e "${YELLOW}🔑 Setting up SSH access for pipeline users...${NC}"
+
+# Check if current user has SSH keys to copy
+if [[ -f "/home/$SUDO_USER/.ssh/authorized_keys" ]]; then
+    echo -e "${GREEN}Found SSH keys from user: $SUDO_USER${NC}"
+    
+    for user in deploy nodeuser pythonuser proxyuser; do
+        echo "  Setting up SSH for: $user"
+        
+        # Create .ssh directory
+        sudo -u $user mkdir -p /home/$user/.ssh
+        sudo -u $user chmod 700 /home/$user/.ssh
+        
+        # Copy authorized_keys from the user who ran sudo
+        sudo cp "/home/$SUDO_USER/.ssh/authorized_keys" "/home/$user/.ssh/authorized_keys"
+        sudo chown $user:$user "/home/$user/.ssh/authorized_keys"
+        sudo chmod 600 "/home/$user/.ssh/authorized_keys"
+        
+        echo "  ✅ SSH configured for $user"
+    done
+    
+    echo -e "${GREEN}✅ SSH access configured for all pipeline users${NC}"
+else
+    echo -e "${YELLOW}⚠️  Warning: No SSH keys found for $SUDO_USER${NC}"
+    echo -e "${YELLOW}   Creating empty .ssh directories for pipeline users${NC}"
+    
+    for user in deploy nodeuser pythonuser proxyuser; do
+        echo "  Creating SSH directory for: $user"
+        
+        # Create .ssh directory only
+        sudo -u $user mkdir -p /home/$user/.ssh
+        sudo -u $user chmod 700 /home/$user/.ssh
+        
+        # Create empty authorized_keys file
+        sudo -u $user touch /home/$user/.ssh/authorized_keys
+        sudo -u $user chmod 600 /home/$user/.ssh/authorized_keys
+        
+        echo "  ✅ SSH directory created for $user (keys need manual setup)"
+    done
+    
+    echo -e "${YELLOW}⚠️  Manual SSH key setup required:${NC}"
+    echo "   For each user, copy SSH public keys to:"
+    echo "   /home/[user]/.ssh/authorized_keys"
+fi
+
 # Verify setup
 echo -e "${YELLOW}🔍 Verifying user group memberships...${NC}"
 for user in deploy nodeuser pythonuser proxyuser; do
@@ -254,6 +300,44 @@ for user in deploy nodeuser pythonuser proxyuser; do
         fi
     else
         echo "❌ $user not detected as pipeline team member"
+        ((ERRORS++))
+    fi
+done
+
+# Test SSH directory setup
+echo ""
+echo "🔑 Testing SSH access setup..."
+for user in deploy nodeuser pythonuser proxyuser; do
+    if [[ -d "/home/$user/.ssh" ]]; then
+        ssh_perms=$(stat -c %a "/home/$user/.ssh")
+        if [[ "$ssh_perms" == "700" ]]; then
+            echo "✅ $user has .ssh directory with correct permissions (700)"
+        else
+            echo "❌ $user .ssh directory has incorrect permissions: $ssh_perms (should be 700)"
+            ((ERRORS++))
+        fi
+        
+        if [[ -f "/home/$user/.ssh/authorized_keys" ]]; then
+            keys_perms=$(stat -c %a "/home/$user/.ssh/authorized_keys")
+            if [[ "$keys_perms" == "600" ]]; then
+                echo "✅ $user has authorized_keys with correct permissions (600)"
+                
+                # Check if file has content (not empty)
+                if [[ -s "/home/$user/.ssh/authorized_keys" ]]; then
+                    echo "   └─ ✅ authorized_keys contains SSH keys"
+                else
+                    echo "   └─ ⚠️  authorized_keys is empty (manual SSH key setup needed)"
+                fi
+            else
+                echo "❌ $user authorized_keys has incorrect permissions: $keys_perms (should be 600)"
+                ((ERRORS++))
+            fi
+        else
+            echo "❌ $user missing authorized_keys file"
+            ((ERRORS++))
+        fi
+    else
+        echo "❌ $user missing .ssh directory"
         ((ERRORS++))
     fi
 done
