@@ -1,0 +1,18 @@
+╭─────────────────────────────────────────────────────────────╮
+│ ✻ Welcome to Claude Code!                                   │
+│                                                             │
+│   /help for help, /status for your current setup            │
+│                                                             │
+│   cwd: /media/alex/LargeStorage/Projects/Nginx_RP_Pipeline  │
+╰─────────────────────────────────────────────────────────────╯
+● Compact summary (ctrl+r to expand)
+  ⎿  Read ../../Docs_and_Manuals_and_APIs/Serena_MCP/04_Advanced_Features.md (471 lines)
+  ⎿  Read serena-source/CLAUDE.md (113 lines)
+  ⎿  Read .mcp.json (17 lines)
+  ⎿  Read ../../Docs_and_Manuals_and_APIs/Serena_MCP/06_Troubleshooting.md (573 lines)
+  ⎿  Read ../../Docs_and_Manuals_and_APIs/Serena_MCP/07_Use_Cases_Examples.md (972 lines)
+  ⎿  Todo list read (5 items)
+
+> /compact 
+  ⎿  Compacted. ctrl+r to see full summary
+
