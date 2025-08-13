@@ -12,7 +12,11 @@
     "test:e2e:ship": "BASE_HTTP=8083 BASE_HTTPS=8446 playwright test -c playwright.config.ts",
     "test:e2e:stage": "BASE_URL=https://stage.example.com playwright test -c playwright.config.ts",
     "test:e2e:preprod": "BASE_URL=https://preprod.example.com playwright test -c playwright.config.ts",
-    "test:e2e:prod": "BASE_URL=https://example.com playwright test -c playwright.config.ts"
+    "test:e2e:prod": "BASE_URL=https://example.com playwright test -c playwright.config.ts",
+
+    "test:dev-local": "npm run test:config && npm run test:unit && npm run test:integration && npm run test:e2e:ship",
+    "test:env-any": "playwright test -c playwright.config.ts",
+    "test:env-any:custom": "playwright test -c playwright.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.46.0"
