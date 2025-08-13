@@ -77,3 +77,22 @@ Scope: Strengthen unit/integration (Bats) and end‑to‑end (Playwright) tests 
 - [ ] Create `tests/e2e/fixtures/env.ts`; refactor specs to use it
 - [ ] Add small request‑level tests (404, redirects, compression)
 - [ ] Configure CI to archive Playwright artifacts and show report
+
+## Test grouping for execution contexts
+
+Two practical groups:
+
+- **Dev‑local (project root only)**
+  - Requires repo workspace layout (seed/wip/prep/ship) and local Docker
+  - Includes: `tests/unit/*`, `tests/integration/pipeline_flow.bats`, `playwright` against local ship
+  - Command: `npm run test:dev-local`
+
+- **Env‑agnostic (any environment: wip/prep/ship/stage/preprod/prod)**
+  - Pure HTTP/TLS behavior via Playwright against a provided `BASE_URL`/ports
+  - Run in CI or on remote envs without touching repo workspaces
+  - Commands:
+    - `npm run test:env-any` (uses `playwright.config.ts` defaults)
+    - `npm run test:env-any:custom` with env vars, e.g.:
+      ```bash
+      BASE_URL=https://stage.example.com REQUIRE_VALID_CERT=1 npm run test:env-any:custom
+      ```
