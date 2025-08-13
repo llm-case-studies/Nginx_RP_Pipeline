@@ -96,3 +96,86 @@ Two practical groups:
       ```bash
       BASE_URL=https://stage.example.com REQUIRE_VALID_CERT=1 npm run test:env-any:custom
       ```
+
+---
+
+## MCP integrations to add (code quality, testing, refactoring)
+
+- Code quality
+  - Semgrep MCP: static/security rules; JSON findings; optional autofix.
+  - ESLint MCP: lint/--fix for JS/TS; SARIF/JSON output.
+  - Prettier MCP: format files or diffs on demand.
+  - ShellCheck MCP: shell lint with fix suggestions.
+  - Hadolint MCP: Dockerfile lint (pinning, best practices).
+  - yamllint + markdownlint MCP: config/docs hygiene.
+  - Trivy MCP: filesystem/image scan for CVEs (baseline only).
+
+- Testing
+  - Playwright MCP: targeted navigate/assert/screenshot for fast smoke.
+  - HTTP MCP: GET/HEAD, redirects, headers, gzip, TLS info; lightweight gates.
+  - Bats MCP (wrapper): run a single Bats test and return parsed result.
+  - k6 MCP (optional): small perf smoke for critical endpoints.
+
+- Refactoring
+  - Codemod MCP (jscodeshift): structural edits in JS/TS with preview.
+  - TS‑morph MCP: rename/extract/move with type safety.
+  - Python libcst MCP: safe Python codemods (imports, APIs).
+  - OpenRewrite MCP: Java/YAML recipe‑driven refactors.
+  - Serena MCP: keep; expose common refactor actions as tools.
+
+- Nginx/domain‑specific
+  - Nginx Validate MCP: run nginx -t/-T, parse errors, suggest fixes.
+  - Config Drift MCP: diff `conf.d` across stages, highlight drift.
+
+- Cross‑cutting automation
+  - Pre‑commit MCP: run hooks (eslint, shellcheck, prettier) on changed files and return fixable patch.
+  - Conventional Commits MCP: lint/compose commit messages.
+  - Changelog MCP: generate/update CHANGELOG from commits.
+
+---
+
+## Spin‑off project: Smart Monitor (tiny LLM + HTTP MCP)
+
+Goal: Continuous, adaptive smoke checks across environments (wip/prep/ship/stage/preprod/prod) with minimal infra.
+
+- Architecture
+  - HTTP MCP server: runs near targets; tools: request/assert/headers/tlsInfo/download.
+  - Agent: small process using a tiny LLM (e.g., 7–8B instruct or GPT‑4o‑mini) to select checks, call MCP, and evaluate.
+  - Spec: YAML checks + budgets; outputs: JSON results, artifacts, alerts.
+  - Storage: per‑env results under `/var/lib/workflow/monitoring/` and optional commit to Git ledger/index.
+
+- Check spec (example)
+  ```yaml
+  checks:
+    - id: redirect_https
+      url: http://cutietraders.com/
+      expect:
+        status: [301,302,308]
+        headers:
+          location: contains:https://cutietraders.com
+    - id: security_headers
+      url: https://iLegalFlow.com/
+      expect:
+        status: 200
+        headers:
+          strict-transport-security: matches:^max-age=\d+
+          x-content-type-options: equals:nosniff
+    - id: tls_chain_valid
+      url: https://iMediFlow.com/
+      tls: { verify: true }
+  ```
+
+- Guardrails
+  - Host allow‑list; methods GET/HEAD by default.
+  - Timeouts, rate limits, response size caps; redact sensitive headers.
+  - Deterministic loop: plan → probe → evaluate → report (with one retry max).
+
+- MVP plan (1–2 days)
+  - Implement HTTP MCP with allow‑list and caps.
+  - Define ~12 checks for ship/stage (redirects, headers, gzip, TLS).
+  - Write agent harness (Python) with a tiny LLM; JSON reports + Slack/email on failure.
+  - Systemd timer per env; artifacts archived under monitoring path.
+
+- Stretch
+  - Trend baselines (latency windows), canary scoring, and auto‑quarantine recommendations.
+
