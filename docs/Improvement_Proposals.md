@@ -179,3 +179,45 @@ Goal: Continuous, adaptive smoke checks across environments (wip/prep/ship/stage
 - Stretch
   - Trend baselines (latency windows), canary scoring, and auto‑quarantine recommendations.
 
+---
+
+## Multi‑LLM integration (Grok, DeepSeek, ChatGPT) via MCPO + Cloudflare Tunnel
+
+Let external LLMs participate using your local tools safely. Expose selected MCP servers (Serena, HTTP MCP, Playwright MCP) as temporary HTTPS APIs.
+
+- Why
+  - Invite multiple models (Grok/DeepSeek/ChatGPT) to run code quality, smoke checks, and refactors using the same tool surface.
+  - No new infra: tunnels are ephemeral; servers run locally.
+
+- What to expose
+  - Serena MCP: semantic search and safe, diff‑based edits (recommend read‑only by default).
+  - HTTP MCP: lightweight probes/headers/TLS.
+  - Playwright MCP: targeted UI smoke (navigate/assert/screenshot).
+
+- How (summary)
+  1. Start MCPO wrapping an MCP server with an API key (example for Serena on port 8000):
+     ```bash
+     uvx mcpo --port 8000 --api-key $MCPO_KEY -- \
+       uvx --from git+https://github.com/oraios/serena \
+       serena start-mcp-server --context chatgpt --project $(pwd)
+     ```
+  2. Run a tunnel to expose it:
+     ```bash
+     cloudflared tunnel --url http://localhost:8000
+     # yields https://<random>.trycloudflare.com
+     ```
+  3. In the external LLM UI:
+     - Add API/tool → import OpenAPI from `<public-url>/openapi.json`
+     - Auth: Bearer with your `$MCPO_KEY`
+     - Use generated functions (tools) directly
+
+- Security guardrails
+  - Default to read‑only tools for Serena; enable write tools only when needed.
+  - Restrict HTTP MCP host allow‑list; GET/HEAD only; cap body size/timeouts.
+  - Rotate `$MCPO_KEY`, keep tunnels short‑lived; stop `cloudflared` when done.
+  - Log tool calls; store artifacts locally; avoid exposing secrets via params.
+
+- Ops tips
+  - Maintain per‑project `.mcp.json` for local clients (Claude/Continue) and an MCPO quick‑start snippet for external LLMs.
+  - Provide “session envelope” docs with allowed hosts and read‑only policy.
+
