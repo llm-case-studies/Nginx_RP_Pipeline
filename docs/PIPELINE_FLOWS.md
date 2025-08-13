@@ -208,3 +208,140 @@ docker restart nginx-rp-wip
 3. **Use intake**: Always use intake/ directory for new artifacts
 4. **Maintain isolation**: Don't mix different changes in one pipeline run
 5. **Document locks**: Always provide clear reason when locking WIP
+
+---
+
+## Federated Execution Model (Optional, Recommended for Multi-Node)
+
+Some teams operate the pipeline as a federation of stage owners (seed, wip, prep/stage, ship/prod), where each environment hosts its own queue and local state. Handoffs between stages are lightweight "tickets" exchanged over SSH/SCP into inbox directories. This avoids any central server, enables offline progress, and allows local prioritization (including express deployments).
+
+Key directories per environment (convention):
+
+- `/var/lib/workflow/inbox/` — incoming tickets (JSON files); processed in priority order
+- `/var/lib/workflow/processing/` — active lock while the run is executing
+- `/var/lib/workflow/runs/<run_id>/` — canonical local state, logs, artifacts
+- `/var/lib/workflow/outbox/` — tickets queued for the next environment if it is temporarily unreachable
+
+### Flow progression (including express path)
+
+```mermaid
+flowchart LR
+  SEED[seed] --> WIP[wip]
+  WIP --> STAGE[prep/stage]
+  STAGE --> SHIP[ship]
+  SHIP --> PROD[deploy]
+
+  %% Express path can overtake at stage/ship based on priority
+  WIP -- Express Ticket (priority=P1) --> SHIP
+
+  classDef normal fill:#e8f4ff,stroke:#4a90e2,color:#1a3d6b
+  classDef terminal fill:#e8ffe8,stroke:#3aa35c,color:#134d2a
+  class SEED,WIP,STAGE,SHIP normal;
+  class PROD terminal;
+```
+
+### Message exchange via inboxes (priority handling)
+
+```mermaid
+sequenceDiagram
+  participant TeamA as Team A (normal)
+  participant TeamB as Team B (express)
+  participant WIP as WIP Agent
+  participant STAGE as Stage Agent
+  participant SHIP as Ship Agent
+
+  TeamA->>WIP: request build (normal)
+  WIP->>STAGE: scp inbox ticket {priority: P3}
+  Note over STAGE: Queue: [A:P3]
+
+  TeamB->>WIP: request build (express)
+  WIP->>SHIP: scp inbox ticket {priority: P1, express:true}
+  WIP->>STAGE: scp inbox ticket {priority: P1, express:true}
+  Note over STAGE: Queue: [B:P1, A:P3]
+
+  STAGE->>STAGE: pick highest priority (B)
+  STAGE->>SHIP: scp inbox ticket {priority: P1}
+  SHIP->>SHIP: select P1 ticket first (B)
+  SHIP->>TeamB: package ready → deploy
+  STAGE->>STAGE: continue with next ticket (A:P3)
+```
+
+### Status collection for active instances (no central server)
+
+```mermaid
+sequenceDiagram
+  participant Operator
+  participant CLI as workflow-cli
+  participant Seed as seed host
+  participant Wip as wip host
+  participant Stage as stage host (acer-hl)
+  participant Ship as ship/prod host
+
+  Operator->>CLI: workflow ps --wide
+  CLI->>Seed: ssh list inbox + runs
+  CLI->>Wip: ssh list inbox + runs
+  CLI->>Stage: ssh list inbox + runs
+  CLI->>Ship: ssh list inbox + runs
+  Seed-->>CLI: statuses (or unreachable)
+  Wip-->>CLI: statuses (or unreachable)
+  Stage-->>CLI: statuses (or unreachable)
+  Ship-->>CLI: statuses (or unreachable)
+  CLI-->>Operator: consolidated view with unknown where unreachable
+```
+
+Notes:
+
+- If an environment is unreachable, its state is reported as "unknown" rather than guessed.
+- Prioritization is enforced locally by each environment using its inbox ordering.
+- Handoffs are retried from the sender's outbox until the next environment is reachable.
+
+---
+
+## 8. Express Deployment (Priority Overtake)
+
+**Use Case**: A critical fix must pass slower counterparts waiting in stage/ship and be processed immediately when resources free up.
+
+Two ways to apply express priority:
+
+- From WIP: submit an express ticket directly to stage and ship with `priority=P1`.
+- At Stage: an admin can promote a waiting ticket by renaming the inbox file or editing its priority field.
+
+### Example
+
+```bash
+# Team B prepares fix in WIP
+./scripts/safe-rp-ctl build-prep   # produces validated prep artifacts locally
+
+# The WIP agent sends tickets (JSON) to Stage and Ship inboxes with priority=P1
+scp /tmp/ticket-express.json stage-host:/var/lib/workflow/inbox/
+scp /tmp/ticket-express.json ship-host:/var/lib/workflow/inbox/
+
+# Stage agent automatically prefers P1 over P3
+# Ship agent will also prefer P1 if packaging can proceed in parallel
+```
+
+Minimal ticket schema (JSON):
+
+```json
+{
+  "run_id": "2025-08-13-abc123",
+  "workflow": "nginx-rp-pipeline@v1",
+  "from_env": "wip",
+  "requested_state": "stage",
+  "priority": "P1",          
+  "express": true,
+  "submitted_at": "2025-08-13T19:35:02Z",
+  "artifacts": {
+    "uri": "ssh://wip-host:/var/lib/workflow/runs/2025-08-13-abc123/artifacts/",
+    "checksum": "sha256:..."
+  },
+  "requested_by": "team-b"
+}
+```
+
+Operational tips:
+
+1. **Local priority policy**: stage and ship agents should order `inbox/` by `priority` then timestamp; `P1 > P2 > P3`.
+2. **Preemption**: agents may finish the current task before picking the express one, unless configured for preemptive switch.
+3. **Audit**: copy processed tickets into `/var/lib/workflow/runs/<run_id>/tickets/` for traceability.
+4. **Local stage on acer-hl**: use the same inbox/outbox conventions to pilot changes safely before propagating to shared stage.
